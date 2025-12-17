@@ -43,6 +43,8 @@ app.whenReady().then(() => {
   createWindow();
 
   ipcMain.handle("midi:listPorts", () => midiBridge.listPorts());
+  ipcMain.handle("midi:listBackends", () => midiBridge.listBackends());
+  ipcMain.handle("midi:setBackend", (_event, id: string) => midiBridge.setBackend(id));
   ipcMain.handle("midi:openIn", (_event, id: string) => midiBridge.openIn(id));
   ipcMain.handle("midi:openOut", (_event, id: string) => midiBridge.openOut(id));
   ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => midiBridge.send(payload));

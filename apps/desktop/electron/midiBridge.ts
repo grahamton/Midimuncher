@@ -1,86 +1,61 @@
 import { EventEmitter } from "node:events";
-import midi from "@julusian/midi";
 import type { MidiEvent, MidiMsg, MidiPortRef } from "@midi-playground/core";
-import type { MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-
-type Direction = "in" | "out";
+import type { MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type { BackendId, MidiBackend, MidiPacket } from "./backends/types";
+import { WinmmBackend } from "./backends/winmmBackend";
+import { WindowsMidiServicesBackend } from "./backends/windowsMidiServicesBackend";
 
 export class MidiBridge extends EventEmitter {
-  private readonly inputProbe = new midi.Input();
-  private readonly outputProbe = new midi.Output();
-  private readonly inputs = new Map<string, midi.Input>();
-  private readonly outputs = new Map<string, midi.Output>();
-  private readonly portNames = new Map<string, string>();
   private readonly srcKind: MidiPortRef["kind"] = "usb";
   private activeRoutes: RouteConfig[] = [];
-  // Tracks recently forwarded messages to avoid tight feedback loops when routing echoes back in.
   private readonly recentEchoes = new Map<string, number>();
   private readonly echoWindowMs = 20;
   private readonly clockCounters = new Map<string, number>();
 
+  private readonly portNames = new Map<string, string>();
+  private readonly backends: MidiBackend[] = [new WinmmBackend(), new WindowsMidiServicesBackend()];
+  private backend: MidiBackend = this.backends[0];
+
+  constructor() {
+    super();
+    this.backend.on("midi", this.handleBackendMidi);
+  }
+
+  dispose() {
+    this.backends.forEach((b) => b.dispose());
+    this.removeAllListeners();
+  }
+
+  async listBackends(): Promise<MidiBackendInfo[]> {
+    const currentId = this.backend.id;
+    const results: MidiBackendInfo[] = [];
+    for (const b of this.backends) {
+      const available = await Promise.resolve(b.isAvailable());
+      results.push({ id: b.id, label: b.label, available, selected: b.id === currentId });
+    }
+    return results;
+  }
+
   listPorts(): MidiPorts {
-    const inputs = this.readPorts("in");
-    const outputs = this.readPorts("out");
-    return { inputs, outputs };
+    const ports = this.backend.listPorts();
+    ports.inputs.forEach((p) => this.portNames.set(p.id, p.name));
+    ports.outputs.forEach((p) => this.portNames.set(p.id, p.name));
+    return ports;
   }
 
   openIn(id: string): boolean {
-    if (this.inputs.has(id)) return true;
-    const idx = this.portIndexFromId(id, "in");
-    if (idx < 0) return false;
-    const input = new midi.Input();
-    input.on("message", (_delta, message) => {
-      const midiMsg = decodeMidiMessage(message);
-      if (!midiMsg) return;
-      const evt: MidiEvent = {
-        ts: Date.now(),
-        src: { id, name: this.portNames.get(id), kind: this.srcKind },
-        msg: midiMsg
-      };
-      this.emit("midi", evt);
-      this.forwardRoute(evt);
-    });
-    try {
-      input.openPort(idx);
-      input.ignoreTypes(false, false, false);
-      this.inputs.set(id, input);
-      return true;
-    } catch (err) {
-      console.error("Failed to open MIDI input", id, err);
-      input.closePort();
-      return false;
-    }
+    return this.backend.openIn(id);
   }
 
   openOut(id: string): boolean {
-    if (this.outputs.has(id)) return true;
-    const idx = this.portIndexFromId(id, "out");
-    if (idx < 0) return false;
-    const output = new midi.Output();
-    try {
-      output.openPort(idx);
-      this.outputs.set(id, output);
-      return true;
-    } catch (err) {
-      console.error("Failed to open MIDI output", id, err);
-      output.closePort();
-      return false;
-    }
+    return this.backend.openOut(id);
   }
 
   send(payload: MidiSendPayload): boolean {
     const { portId, msg } = payload;
-    const output = this.outputs.get(portId) ?? (this.openOut(portId) ? this.outputs.get(portId) : null);
-    if (!output) return false;
     const bytes = encodeMidiMessage(msg);
     if (!bytes) return false;
-    try {
-      output.sendMessage(bytes);
-      return true;
-    } catch (err) {
-      console.error("Failed to send MIDI message", err);
-      return false;
-    }
+    return this.backend.send(portId, bytes);
   }
 
   setRoutes(routes: RouteConfig[]): boolean {
@@ -94,42 +69,22 @@ export class MidiBridge extends EventEmitter {
   }
 
   closeAll() {
-    this.inputs.forEach((input) => {
-      try {
-        input.closePort();
-      } catch (err) {
-        console.warn("Error closing MIDI input", err);
-      }
-    });
-    this.outputs.forEach((output) => {
-      try {
-        output.closePort();
-      } catch (err) {
-        console.warn("Error closing MIDI output", err);
-      }
-    });
-    this.inputs.clear();
-    this.outputs.clear();
+    this.backend.closeAll();
   }
 
-  private readPorts(direction: Direction) {
-    const probe = direction === "in" ? this.inputProbe : this.outputProbe;
-    const count = probe.getPortCount();
-    const list: MidiPorts["inputs"] = [];
-    for (let i = 0; i < count; i += 1) {
-      const name = probe.getPortName(i);
-      const id = `${direction}-${i}`;
-      this.portNames.set(id, name);
-      list.push({ id, name, direction });
-    }
-    return list;
-  }
-
-  private portIndexFromId(id: string, expected: Direction): number {
-    const [direction, idxStr] = id.split("-");
-    if (direction !== expected) return -1;
-    const idx = Number(idxStr);
-    return Number.isNaN(idx) ? -1 : idx;
+  async setBackend(id: BackendId): Promise<boolean> {
+    const target = this.backends.find((b) => b.id === id);
+    if (!target) return false;
+    const available = await Promise.resolve(target.isAvailable());
+    if (!available) return false;
+    if (target === this.backend) return true;
+    this.backend.removeListener("midi", this.handleBackendMidi);
+    this.backend.closeAll();
+    this.backend = target;
+    this.backend.on("midi", this.handleBackendMidi);
+    // Refresh port name cache.
+    this.listPorts();
+    return true;
   }
 
   private forwardRoute(evt: MidiEvent) {
@@ -149,6 +104,18 @@ export class MidiBridge extends EventEmitter {
       this.send({ portId: route.toId, msg });
     }
   }
+
+  private handleBackendMidi = (packet: MidiPacket) => {
+    const midiMsg = decodeMidiMessage(packet.bytes);
+    if (!midiMsg) return;
+    const evt: MidiEvent = {
+      ts: Date.now(),
+      src: { id: packet.portId, name: this.portNames.get(packet.portId), kind: this.srcKind },
+      msg: midiMsg
+    };
+    this.emit("midi", evt);
+    this.forwardRoute(evt);
+  };
 }
 
 function decodeMidiMessage(message: number[]): MidiMsg | null {
