@@ -1,0 +1,49 @@
+{
+  "name": "@midi-playground/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist-electron/main.js",
+  "files": [
+    "dist",
+    "dist-electron"
+  ],
+  "scripts": {
+    "dev": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 concurrently -k \"npm run dev:renderer\" \"npm run dev:main\" \"npm run dev:electron\"",
+    "dev:renderer": "vite dev --host --port 5173",
+    "dev:main": "tsup electron/main.ts electron/preload.ts electron/midiBridge.ts --format cjs --sourcemap --out-dir dist-electron --watch",
+    "dev:electron": "wait-on tcp:5173 dist-electron/main.js && node scripts/run-electron.js",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsup electron/main.ts electron/preload.ts electron/midiBridge.ts --format cjs --sourcemap --out-dir dist-electron",
+    "build:renderer": "vite build",
+    "lint": "echo desktop lint todo",
+    "test": "echo desktop test todo",
+    "smoke:midi": "tsx scripts/midi-smoke.ts"
+  },
+  "dependencies": {
+    "@julusian/midi": "^3.2.1",
+    "@midi-playground/core": "workspace:*",
+    "electron": "^32.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.4.2",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "tsx": "^4.19.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "wait-on": "^7.2.0"
+  },
+  "tsup": {
+    "target": "node20",
+    "shims": false,
+    "splitting": false,
+    "clean": true
+  }
+}

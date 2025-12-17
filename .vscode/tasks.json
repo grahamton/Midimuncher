@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev:desktop",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["-C", "apps/desktop", "dev"],
+      "problemMatcher": []
+    },
+    {
+      "label": "lint:all",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["-r", "lint"],
+      "problemMatcher": []
+    },
+    {
+      "label": "test:all",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["-r", "test"],
+      "problemMatcher": []
+    }
+  ]
+}
