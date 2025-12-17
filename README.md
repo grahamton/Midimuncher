@@ -3,7 +3,7 @@
 Windows desktop MIDI playground that connects to OXI One over USB MIDI.
 
 Core goals
-- Drop-like routing and stability
+- Snapshot-style routing and stability
 - Generative sequencer rack
 - Instrument registry and CC maps
 - OXI stays the hardware brain for downstream synths via MIDI out

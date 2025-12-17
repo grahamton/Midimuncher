@@ -1,6 +1,6 @@
 # Roadmap
 
-Goal: Recreate the core Neuzeit Drop workflow in software, using the OXI One as the hardware router (app -> OXI over USB MIDI, OXI routes DIN/CV/other outs). Platform is Windows with an Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
+Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app -> OXI over USB MIDI, OXI routes DIN/CV/other outs). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
 
 ## Phases
 
@@ -18,10 +18,10 @@ Goal: Recreate the core Neuzeit Drop workflow in software, using the OXI One as 
   - MIDI Learn workflow; curve presets (linear, expo, log).
   - UI: mapping grid (controls left, slot editor right).
 
-- **Phase 3 · Snapshots, Jump, Drop**
+- **Phase 3 · Snapshots, Jump, Commit**
   - 20 banks × 20 snapshots; snapshot stores control values + up to 8 one-shots.
-  - Jump (fade, incl. zero), Drop (cycle-end, no fade); global cycle length 1–32 bars.
-  - UI: performance view with snapshot grid, Jump/Drop buttons, fade time, cycle display.
+  - Jump (fade, incl. zero), Commit (cycle-end, no fade); global cycle length 1–32 bars.
+  - UI: performance view with snapshot grid, Jump/Commit buttons, fade time, cycle display.
 
 - **Phase 4 · Chain mode**
   - Up to 20 chains, 64 steps each; step/auto-advance quantized to cycle boundaries.
@@ -43,7 +43,7 @@ Goal: Recreate the core Neuzeit Drop workflow in software, using the OXI One as 
 - **P1 reliability**
   - Versioned project save format; autosave; crash-safe persistence.
 - **P2 UX**
-  - Onboarding wizard mirroring Drop workflow (gear → init project → add devices → map → snapshots).
+  - Onboarding wizard mirroring the workflow (gear → init project → add devices → map → snapshots).
 
 ## Deliverables to scaffold soon
 
