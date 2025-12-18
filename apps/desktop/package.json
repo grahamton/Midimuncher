@@ -19,6 +19,7 @@
     "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json",
     "test": "tsx --tsconfig tsconfig.test.json --test tests/**/*.test.ts",
     "smoke:midi": "tsx scripts/midi-smoke.ts",
+    "smoke:winrt": "tsx scripts/winrt-smoke.ts",
     "smoke:persist": "tsx scripts/persistence-smoke.ts",
     "smoke:mapping": "tsx scripts/mapping-smoke.ts"
   },

@@ -1,4 +1,4 @@
-import type { ProjectDocV1, ProjectStateV1 } from "../shared/projectTypes";
+import type { ProjectDoc, ProjectState } from "../shared/projectTypes";
 import { coerceProjectDoc, defaultProjectDoc } from "../shared/projectTypes";
 import { ProjectStorage } from "./projectStorage";
 
@@ -8,7 +8,7 @@ export type ProjectStoreOptions = {
 
 export class ProjectStore {
   private storage: ProjectStorage;
-  private current: ProjectDocV1 | null = null;
+  private current: ProjectDoc | null = null;
   private saveTimer: NodeJS.Timeout | null = null;
   private pendingSave: Promise<void> | null = null;
 
@@ -16,20 +16,20 @@ export class ProjectStore {
     this.storage = new ProjectStorage({ dir: opts.dir, filename: "project.json" });
   }
 
-  async load(): Promise<ProjectDocV1> {
+  async load(): Promise<ProjectDoc> {
     const raw = await this.storage.load(() => defaultProjectDoc());
     const doc = coerceProjectDoc(raw);
     this.current = doc;
     return doc;
   }
 
-  get(): ProjectDocV1 {
+  get(): ProjectDoc {
     return this.current ?? defaultProjectDoc();
   }
 
-  setState(state: ProjectStateV1): void {
-    const doc: ProjectDocV1 = {
-      schemaVersion: 1,
+  setState(state: ProjectState): void {
+    const doc: ProjectDoc = {
+      schemaVersion: 2,
       updatedAt: Date.now(),
       state
     };
@@ -56,4 +56,3 @@ export class ProjectStore {
     return this.pendingSave;
   }
 }
-
