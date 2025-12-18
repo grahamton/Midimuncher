@@ -79,6 +79,7 @@ export function App() {
       })),
     [log]
   );
+  const logCapReached = activity.length >= LOG_LIMIT;
 
   async function refreshPorts() {
     if (!midiApi) return;
@@ -234,6 +235,10 @@ export function App() {
   function portName(id: string) {
     const found = [...ports.inputs, ...ports.outputs].find((p) => p.id === id);
     return found?.name ?? id;
+  }
+
+  function clearLog() {
+    setLog([]);
   }
 
   return (
@@ -604,6 +609,13 @@ export function App() {
               Backend: {backends.find((b) => b.selected)?.label ?? "Unknown"} · Input: {selectedIn ?? "None"} · Output:{" "}
               {selectedOut ?? "None"}
             </p>
+            <div className="chips">
+              <span className="chip">Log {activity.length}/{LOG_LIMIT}</span>
+              {logCapReached ? <span className="chip">Log capped</span> : null}
+              <button className="ghost" onClick={clearLog}>
+                Clear log
+              </button>
+            </div>
           </div>
           <div className="log">
             {activity.length === 0 && <p className="muted">No events yet.</p>}
