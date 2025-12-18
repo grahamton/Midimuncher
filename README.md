@@ -36,6 +36,7 @@ Docs
 - docs/routing-model.md
 - docs/sequencer-modules.md
 - docs/roadmap.md
+- docs/instruments.md
 
 Agent entrypoints
 - AGENT_BRIEF.md
