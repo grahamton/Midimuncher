@@ -36,6 +36,22 @@ body {
   letter-spacing: -0.02em;
 }
 
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.nav {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.nav .active {
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
 .eyebrow {
   color: #38bdf8;
   margin: 0;
