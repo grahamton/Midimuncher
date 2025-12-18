@@ -47,6 +47,7 @@ export type ProjectStateV1 = {
   routes: RouteConfig[];
   controls: ControlElement[];
   selectedControlId: string | null;
+  sequencer: SequencerProjectState;
   ui: {
     routeBuilder: {
       forceChannelEnabled: boolean;
@@ -126,6 +127,7 @@ function defaultProjectStateV1(): ProjectStateV1 {
     routes: [],
     controls: [],
     selectedControlId: null,
+    sequencer: defaultSequencerState(),
     ui: {
       routeBuilder: {
         forceChannelEnabled: true,

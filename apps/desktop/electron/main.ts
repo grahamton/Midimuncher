@@ -93,6 +93,10 @@ app.whenReady().then(() => {
   ipcMain.handle("snapshot:capture", (_event, payload: SnapshotCapturePayload) => snapshotService.capture(payload));
   ipcMain.handle("snapshot:recall", (_event, payload: SnapshotRecallPayload) => snapshotService.recall(payload));
 
+  ipcMain.handle("sequencer:apply", (_event, payload: SequencerApplyPayload) => {
+    return sequencerHost.apply(payload);
+  });
+
   midiBridge.on("midi", (evt: MidiEvent) => {
     snapshotService.ingest(evt);
     if (mainWindow && !mainWindow.isDestroyed()) {
