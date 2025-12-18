@@ -1,16 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MAX_SEQUENCER_CHAINS, MAX_SEQUENCER_STEPS, defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
-import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
-import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
-import { defaultProjectState, defaultSequencerState, defaultSequencerStep } from "../../shared/projectTypes";
+import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import type {
+  ControlElement,
+  Curve,
+  MappingSlot,
+  MidiEvent,
+  MidiMsg,
+  SnapshotRecallStrategy
+} from "@midi-playground/core";
+import type {
+  MidiBackendInfo,
+  MidiPortInfo,
+  MidiPorts,
+  RouteConfig,
+  RouteFilter,
+  SnapshotCapturePayload,
+  SnapshotRecallPayload
+} from "../../shared/ipcTypes";
+import { defaultProjectState } from "../../shared/projectTypes";
 import type {
   AppView,
   DeviceConfig,
-  ProjectStateV1,
-  SequencerApplyPayload,
-  SequencerChainConfig,
-  SequencerProjectState,
-  SequencerStepConfig
+  ProjectState,
+  SnapshotBankState,
+  SnapshotSlotState,
+  SnapshotsState
 } from "../../shared/projectTypes";
 
 const LOG_LIMIT = 100;
@@ -48,6 +62,7 @@ export function App() {
   const [allowTransport, setAllowTransport] = useState(true);
   const [allowClock, setAllowClock] = useState(true);
   const [clockDiv, setClockDiv] = useState(1);
+  const [snapshots, setSnapshots] = useState<SnapshotsState>(() => defaultProjectState().snapshots);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
   const [activeView, setActiveView] = useState<AppView>("setup");
@@ -107,7 +122,7 @@ export function App() {
         setClockDiv(state.ui?.routeBuilder?.clockDiv ?? 1);
         setNote(state.ui?.diagnostics?.note ?? 60);
         setCcValue(state.ui?.diagnostics?.ccValue ?? 64);
-        setSequencer(state.sequencer ?? defaultSequencerState());
+        setSnapshots(state.snapshots ?? defaultProjectState().snapshots);
       }
 
       await refreshBackends();
@@ -149,7 +164,8 @@ export function App() {
 
     const unsubscribe = midiApi.onEvent((evt) => {
       const target = learnTargetRef.current;
-      if (target && evt.msg.t === "cc") {
+      const msg = evt.msg;
+      if (target && msg.t === "cc") {
         const currentSelectedIn = selectedInRef.current;
         if (!currentSelectedIn || evt.src.id === currentSelectedIn) {
           learnTargetRef.current = null;
@@ -172,8 +188,8 @@ export function App() {
                 slots[target.slotIndex] = {
                   enabled: true,
                   kind: "cc",
-                  cc: clampMidi(evt.msg.cc),
-                  channel: clampChannel(evt.msg.ch),
+                  cc: clampMidi(msg.cc),
+                  channel: clampChannel(msg.ch),
                   min: 0,
                   max: 127,
                   curve: "linear",
@@ -183,8 +199,8 @@ export function App() {
                 slots[target.slotIndex] = {
                   ...existing,
                   enabled: true,
-                  cc: clampMidi(evt.msg.cc),
-                  channel: clampChannel(evt.msg.ch),
+                  cc: clampMidi(msg.cc),
+                  channel: clampChannel(msg.ch),
                   targetDeviceId: existing.targetDeviceId ?? fallbackTarget
                 };
               }
@@ -230,7 +246,7 @@ export function App() {
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
 
-    const state: ProjectStateV1 = {
+    const state: ProjectState = {
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
@@ -240,7 +256,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      sequencer,
+      snapshots,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -294,6 +310,7 @@ export function App() {
     routes,
     controls,
     selectedControlId,
+    snapshots,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -324,7 +341,7 @@ export function App() {
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
 
-    const state: ProjectStateV1 = {
+    const state: ProjectState = {
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
@@ -334,7 +351,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      sequencer,
+      snapshots,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -371,6 +388,7 @@ export function App() {
     routes,
     controls,
     selectedControlId,
+    snapshots,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -394,6 +412,73 @@ export function App() {
     [log]
   );
   const logCapReached = activity.length >= LOG_LIMIT;
+  const activeSnapshotBank = useMemo(
+    () => snapshots.banks.find((b) => b.id === snapshots.activeBankId) ?? snapshots.banks[0] ?? null,
+    [snapshots]
+  );
+
+  useEffect(() => {
+    if (!snapshots.activeBankId && snapshots.banks[0]) {
+      setSnapshots((current) => ({ ...current, activeBankId: current.banks[0]?.id ?? null }));
+    }
+  }, [snapshots]);
+
+  function setActiveSnapshotBank(bankId: string) {
+    setSnapshots((current) => ({ ...current, activeBankId: bankId }));
+  }
+
+  function updateSnapshotBank(bankId: string, updater: (bank: SnapshotBankState) => SnapshotBankState) {
+    setSnapshots((current) => ({
+      ...current,
+      banks: current.banks.map((bank) => (bank.id === bankId ? updater(bank) : bank))
+    }));
+  }
+
+  function updateSnapshotSlot(bankId: string, slotId: string, updater: (slot: SnapshotSlotState) => SnapshotSlotState) {
+    updateSnapshotBank(bankId, (bank) => ({
+      ...bank,
+      slots: bank.slots.map((slot) => (slot.id === slotId ? updater(slot) : slot))
+    }));
+  }
+
+  function updateSnapshotsState(partial: Partial<SnapshotsState>) {
+    setSnapshots((current) => ({ ...current, ...partial }));
+  }
+
+  async function captureSnapshotSlot(bankId: string, slotId: string) {
+    if (!midiApi) return;
+    try {
+      const payload: SnapshotCapturePayload = { notes: snapshots.captureNotes };
+      const snapshot = await midiApi.captureSnapshot(payload);
+      updateSnapshotSlot(bankId, slotId, (slot) => ({
+        ...slot,
+        snapshot,
+        lastCapturedAt: snapshot.capturedAt,
+        notes: snapshots.captureNotes
+      }));
+    } catch (err) {
+      console.error("Failed to capture snapshot", err);
+    }
+  }
+
+  async function recallSnapshotSlot(bankId: string, slotId: string, strategy?: SnapshotRecallStrategy) {
+    if (!midiApi) return;
+    const bank = snapshots.banks.find((b) => b.id === bankId);
+    const slot = bank?.slots.find((s) => s.id === slotId);
+    if (!slot?.snapshot) return;
+    const payload: SnapshotRecallPayload = {
+      snapshot: slot.snapshot,
+      strategy: strategy ?? snapshots.strategy,
+      fadeMs: snapshots.fadeMs,
+      commitDelayMs: snapshots.commitDelayMs,
+      burst: snapshots.burst
+    };
+    try {
+      await midiApi.recallSnapshot(payload);
+    } catch (err) {
+      console.error("Failed to recall snapshot", err);
+    }
+  }
 
   async function refreshPorts() {
     if (!midiApi) return;
@@ -410,13 +495,13 @@ export function App() {
 
   async function resetProject() {
     if (!midiApi) return;
-    const ok = window.confirm("Reset project? This clears devices, routes, and mappings.");
+    const ok = window.confirm("Reset project? This clears devices, routes, mappings, and snapshots.");
     if (!ok) return;
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
     const sequencerState = defaultSequencerState();
     const base = defaultProjectState();
-    const state: ProjectStateV1 = {
+    const state: ProjectState = {
       ...base,
       backendId: selectedBackendId,
       selectedIn,
@@ -433,6 +518,7 @@ export function App() {
     setRoutes(state.routes);
     setControls(state.controls);
     setSelectedControlId(state.selectedControlId ?? "knob-1");
+    setSnapshots(state.snapshots);
     setForceChannelEnabled(state.ui.routeBuilder.forceChannelEnabled);
     setRouteChannel(state.ui.routeBuilder.routeChannel);
     setAllowNotes(state.ui.routeBuilder.allowNotes);
@@ -803,8 +889,11 @@ export function App() {
             >
               Mapping
             </button>
-            <button className={activeView === "chains" ? "ghost active" : "ghost"} onClick={() => setActiveView("chains")}>
-              Chains
+            <button
+              className={activeView === "snapshots" ? "ghost active" : "ghost"}
+              onClick={() => setActiveView("snapshots")}
+            >
+              Snapshots
             </button>
             <button className={activeView === "monitor" ? "ghost active" : "ghost"} onClick={() => setActiveView("monitor")}>
               Monitor
@@ -1232,6 +1321,186 @@ export function App() {
                   Send CC
                 </button>
               </div>
+            </div>
+      </section>
+    </>
+  ) : null}
+
+      {activeView === "snapshots" ? (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Snapshots</h2>
+              <p>Capture per-device CC/program/note state and recall it with Jump/Commit strategies.</p>
+            </div>
+            <div className="grid two">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Banks</h3>
+                  <span className="pill">{snapshots.banks.length} banks</span>
+                </div>
+                {snapshots.banks.length === 0 ? (
+                  <p className="muted">No banks yet.</p>
+                ) : (
+                  <>
+                    <div className="chips">
+                      {snapshots.banks.map((bank) => (
+                        <button
+                          key={bank.id}
+                          className={activeSnapshotBank?.id === bank.id ? "ghost active" : "ghost"}
+                          onClick={() => setActiveSnapshotBank(bank.id)}
+                        >
+                          {bank.name}
+                        </button>
+                      ))}
+                    </div>
+                    {activeSnapshotBank ? (
+                      <label className="field">
+                        <span>Bank name</span>
+                        <input
+                          type="text"
+                          value={activeSnapshotBank.name}
+                          onChange={(e) =>
+                            updateSnapshotBank(activeSnapshotBank.id, (bank) => ({ ...bank, name: e.target.value }))
+                          }
+                        />
+                      </label>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <h3>Recall options</h3>
+                </div>
+                <label className="field">
+                  <span>Strategy</span>
+                  <select
+                    value={snapshots.strategy}
+                    onChange={(e) => updateSnapshotsState({ strategy: e.target.value as SnapshotRecallStrategy })}
+                  >
+                    <option value="jump">Jump (immediate)</option>
+                    <option value="commit">Commit (cycle end)</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Fade (ms)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={snapshots.fadeMs}
+                    onChange={(e) => updateSnapshotsState({ fadeMs: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </label>
+                <label className="field">
+                  <span>Commit delay (ms)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={snapshots.commitDelayMs}
+                    onChange={(e) =>
+                      updateSnapshotsState({ commitDelayMs: Math.max(0, Number(e.target.value) || 0) })
+                    }
+                  />
+                </label>
+                <div className="grid two">
+                  <label className="field">
+                    <span>Burst max per window</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={snapshots.burst.maxPerInterval}
+                      onChange={(e) =>
+                        updateSnapshotsState({
+                          burst: { ...snapshots.burst, maxPerInterval: Math.max(1, Number(e.target.value) || 1) }
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Burst window (ms)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={snapshots.burst.intervalMs}
+                      onChange={(e) =>
+                        updateSnapshotsState({
+                          burst: { ...snapshots.burst, intervalMs: Math.max(1, Number(e.target.value) || 1) }
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Capture notes</span>
+                  <textarea
+                    value={snapshots.captureNotes}
+                    onChange={(e) => updateSnapshotsState({ captureNotes: e.target.value })}
+                    rows={3}
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Bank slots</h2>
+              <p>{activeSnapshotBank ? activeSnapshotBank.name : "No active bank selected"}</p>
+            </div>
+            <div className="log">
+              {!activeSnapshotBank ? (
+                <p className="muted">Select a bank above to work with snapshot slots.</p>
+              ) : (
+                activeSnapshotBank.slots.map((slot) => (
+                  <div key={slot.id} className="log-row">
+                    <div>
+                      <input
+                        type="text"
+                        value={slot.name}
+                        onChange={(e) =>
+                          updateSnapshotSlot(activeSnapshotBank.id, slot.id, (s) => ({ ...s, name: e.target.value }))
+                        }
+                        style={{ marginBottom: 6 }}
+                      />
+                      <p className="muted">
+                        {slot.snapshot
+                          ? `Captured ${new Date((slot.lastCapturedAt ?? slot.snapshot.capturedAt) ?? Date.now()).toLocaleString()} · Devices ${slot.snapshot.devices.length} · BPM ${slot.snapshot.bpm ?? "—"}`
+                          : "Empty slot"}
+                      </p>
+                      <label className="field">
+                        <span>Notes</span>
+                        <input
+                          type="text"
+                          value={slot.notes}
+                          onChange={(e) =>
+                            updateSnapshotSlot(activeSnapshotBank.id, slot.id, (s) => ({ ...s, notes: e.target.value }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="chips">
+                      <button className="ghost" onClick={() => captureSnapshotSlot(activeSnapshotBank.id, slot.id)}>
+                        Capture
+                      </button>
+                      <button
+                        className="ghost"
+                        onClick={() => recallSnapshotSlot(activeSnapshotBank.id, slot.id, "jump")}
+                        disabled={!slot.snapshot}
+                      >
+                        Jump
+                      </button>
+                      <button
+                        className="ghost"
+                        onClick={() => recallSnapshotSlot(activeSnapshotBank.id, slot.id, "commit")}
+                        disabled={!slot.snapshot}
+                      >
+                        Commit
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         </>

@@ -1,7 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { MidiEvent } from "@midi-playground/core";
-import type { MappingEmitPayload, MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-import type { ProjectDocV1, ProjectStateV1, SequencerApplyPayload } from "../shared/projectTypes";
+import type { MidiEvent, SnapshotState } from "@midi-playground/core";
+import type {
+  MappingEmitPayload,
+  MidiBackendInfo,
+  MidiPorts,
+  MidiSendPayload,
+  RouteConfig,
+  SnapshotCapturePayload,
+  SnapshotRecallPayload
+} from "../shared/ipcTypes";
+import type { ProjectDoc, ProjectState } from "../shared/projectTypes";
 
 const midiApi = {
   listPorts: (): Promise<MidiPorts> => ipcRenderer.invoke("midi:listPorts"),
@@ -12,10 +20,11 @@ const midiApi = {
   send: (payload: MidiSendPayload): Promise<boolean> => ipcRenderer.invoke("midi:send", payload),
   emitMapping: (payload: MappingEmitPayload): Promise<boolean> => ipcRenderer.invoke("mapping:emit", payload),
   setRoutes: (routes: RouteConfig[]): Promise<boolean> => ipcRenderer.invoke("midi:setRoutes", routes),
-  loadProject: (): Promise<ProjectDocV1 | null> => ipcRenderer.invoke("project:load"),
-  setProjectState: (state: ProjectStateV1): Promise<boolean> => ipcRenderer.invoke("project:setState", state),
+  loadProject: (): Promise<ProjectDoc | null> => ipcRenderer.invoke("project:load"),
+  setProjectState: (state: ProjectState): Promise<boolean> => ipcRenderer.invoke("project:setState", state),
   flushProject: (): Promise<boolean> => ipcRenderer.invoke("project:flush"),
-  applySequencer: (payload: SequencerApplyPayload): Promise<boolean> => ipcRenderer.invoke("sequencer:apply", payload),
+  captureSnapshot: (payload?: SnapshotCapturePayload): Promise<SnapshotState> => ipcRenderer.invoke("snapshot:capture", payload),
+  recallSnapshot: (payload: SnapshotRecallPayload): Promise<boolean> => ipcRenderer.invoke("snapshot:recall", payload),
   onEvent: (listener: (evt: MidiEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, data: MidiEvent) => listener(data);
     ipcRenderer.on("midi:event", handler);
