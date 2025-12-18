@@ -1,6 +1,6 @@
 # midi-playground
 
-Windows desktop MIDI playground that uses the OXI One as the hardware hub (USB in to OXI, OXI handles DIN/CV downstream).
+Windows desktop MIDI playground that uses the OXI One as the hardware hub (USB in to OXI, OXI handles DIN/TRS downstream).
 
 Core goals
 - Snapshot-style routing and stability

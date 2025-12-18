@@ -1,6 +1,6 @@
 # Roadmap
 
-Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app → OXI over USB MIDI, OXI routes DIN/CV/other outs). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
+Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app → OXI over USB MIDI, OXI routes DIN/TRS downstream). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
 
 ## Phases
 
