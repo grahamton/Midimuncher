@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { MidiEvent, MidiMsg } from "@midi-playground/core";
 import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
 
@@ -10,6 +11,7 @@ const DIAG_CHANNEL = 1;
 type Device = {
   id: string;
   name: string;
+  instrumentId: string | null;
   inputId: string | null;
   outputId: string | null;
   channel: number;
@@ -171,6 +173,7 @@ export function App() {
       {
         id: `device-${Date.now().toString(36)}-${nextIndex}`,
         name: `Device ${nextIndex}`,
+        instrumentId: null,
         inputId: ports.inputs[0]?.id ?? null,
         outputId: ports.outputs[0]?.id ?? null,
         channel: 1,
@@ -336,6 +339,15 @@ export function App() {
                   </span>
                 </div>
                 {devices.length === 0 ? <p className="muted">Add devices to mirror your rig.</p> : null}
+                <div className="hint">
+                  <p className="muted">
+                    OXI tip: If you enable OXI Split in OXI MIDI settings, Windows should expose multiple OXI ports (A/B/C).
+                    Bind each device output to the desired OXI port to access more channels.
+                  </p>
+                  <p className="muted">
+                    Loop tip: If you hear double-triggering, disable OXI USB Thru so the app is the only router.
+                  </p>
+                </div>
                 <div className="stack">
                   {devices.map((d) => (
                     <div key={d.id} className="device-row">
@@ -354,6 +366,28 @@ export function App() {
                         </button>
                       </div>
                       <div className="device-grid">
+                        <label className="field">
+                          <span>Instrument</span>
+                          <select
+                            value={d.instrumentId ?? ""}
+                            onChange={(e) => {
+                              const instrumentId = e.target.value || null;
+                              const profile = getInstrumentProfile(instrumentId);
+                              updateDevice(d.id, {
+                                instrumentId,
+                                channel: profile?.defaultChannel ?? d.channel,
+                                name: instrumentId ? profile?.name ?? d.name : d.name
+                              });
+                            }}
+                          >
+                            <option value="">Custom</option>
+                            {INSTRUMENT_PROFILES.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                         <label className="field">
                           <span>Input</span>
                           <select
@@ -404,6 +438,9 @@ export function App() {
                           </div>
                         </label>
                       </div>
+                      {getInstrumentProfile(d.instrumentId)?.localControlNote ? (
+                        <p className="muted">{getInstrumentProfile(d.instrumentId)?.localControlNote}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

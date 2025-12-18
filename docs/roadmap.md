@@ -4,14 +4,15 @@ Goal: Build a snapshot-driven performance controller in software, using the OXI 
 
 ## Phases
 
-- **Phase 0 · MIDI backend spike**
-  - Add `IMidiBackend` abstraction; wire current WinMM (@julusian/midi) path.
-  - Spike Windows MIDI Services provider behind a feature flag; diagnostics panel to show active backend and run a send/receive sanity check to OXI.
+- **Phase 0 · MIDI backend spike (done)**
+  - Added `IMidiBackend` abstraction; WinMM provider; stub Windows MIDI Services provider behind feature flag.
+  - Diagnostics panel to send a test note.
+  - Backend selector UI.
 
-- **Phase 1 · Device graph + routing**
+- **Phase 1 · Device graph + routing (in progress)**
   - Device model (max 8) with in/out/clock flags, default channel, port binding.
-  - Routing rules per device, merge toggle, basic filters (message types, channel), per-device clock enable/delay placeholder.
-  - Monitor view with overload indicators and per-device activity badges.
+  - Routing rules with filters/channel force/passthrough/clock thinning; loop guard; device-aware route creation.
+  - Monitor view with log cap indicator and clear control.
 
 - **Phase 2 · Mapping engine v1**
   - `ControlElement` with 8 slots; slot: type (CC/NRPN/note/PC), channel, param, min/max, curve, target device, enabled.
