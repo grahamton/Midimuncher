@@ -15,6 +15,21 @@ export type InstrumentProfile = {
 
 export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
   {
+    id: "oxi_one",
+    name: "OXI One (hub)",
+    defaultChannel: 1,
+    notes: [
+      "Enable “CC Transport Msgs” on OXI to use transport CCs.",
+      "Enable OXI Split selection to expose ports A/B/C when using the split box.",
+      "USB Thru controls whether USB MIDI is forwarded to DIN/TRS outputs."
+    ],
+    cc: [
+      { id: "transport_stop", label: "Transport Stop", cc: 105 },
+      { id: "transport_play", label: "Transport Play", cc: 106 },
+      { id: "transport_record_toggle", label: "Transport Record (toggle)", cc: 107 }
+    ]
+  },
+  {
     id: "microfreak",
     name: "Arturia MicroFreak",
     defaultChannel: 1,
@@ -31,15 +46,15 @@ export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
   {
     id: "monologue",
     name: "Korg Monologue",
-    defaultChannel: 1,
+    defaultChannel: 2,
     localControlNote: "Set Local SW to OFF (Global Edit) when routing keys through the app.",
-    notes: ["Supports CC and NRPN; start with CC for v1."],
+    notes: ["Supports CC and NRPN; start with CC for v1.", "Some parameter CCs vary by firmware; verify on device."],
     cc: [
-      { id: "cutoff", label: "Filter Cutoff", cc: 43 },
+      { id: "filter_cutoff", label: "Filter Cutoff", cc: 43 },
       { id: "resonance", label: "Resonance", cc: 44 },
-      { id: "vco1_wave", label: "VCO1 Wave", cc: 39 },
-      { id: "vco1_shape", label: "VCO1 Shape", cc: 40 },
-      { id: "vco2_pitch", label: "VCO2 Pitch", cc: 56 },
+      { id: "vco2_pitch", label: "VCO2 Pitch", cc: 35 },
+      { id: "vco1_level", label: "VCO1 Level", cc: 39 },
+      { id: "vco2_level", label: "VCO2 Level", cc: 40 },
       { id: "eg_attack", label: "EG Attack", cc: 16 },
       { id: "eg_decay", label: "EG Decay", cc: 17 }
     ]
@@ -49,10 +64,13 @@ export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
     name: "Elektron Digitakt",
     defaultChannel: 10,
     localControlNote: "Check INT TO MAIN setting depending on your monitoring/Overbridge workflow.",
+    notes: ["Ensure RECEIVE CC/NRPN is enabled in MIDI Config → Port Config."],
     cc: [
       { id: "sample_select", label: "Sample Select", cc: 19 },
       { id: "bit_reduction", label: "Bit Reduction", cc: 18 },
       { id: "filter_freq", label: "Filter Frequency", cc: 74 },
+      { id: "delay_send", label: "Delay Send", cc: 82 },
+      { id: "reverb_send", label: "Reverb Send", cc: 83 },
       { id: "tune", label: "Tune (Pitch)", cc: 16 },
       { id: "track_level", label: "Track Level", cc: 95 }
     ]
@@ -60,9 +78,11 @@ export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
   {
     id: "pro_vs_mini",
     name: "Behringer PRO VS MINI",
-    defaultChannel: 1,
+    defaultChannel: 3,
     cc: [
       { id: "mod", label: "Modulation / Vector Mix", cc: 1 },
+      { id: "filter_env_decay", label: "Filter Env Decay", cc: 13 },
+      { id: "filter_env_sustain", label: "Filter Env Sustain", cc: 14 },
       { id: "filter_cutoff", label: "Filter Cutoff", cc: 74 },
       { id: "wave_a", label: "Wave Select A", cc: 24 },
       { id: "wave_b", label: "Wave Select B", cc: 25 },
@@ -74,12 +94,13 @@ export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
   {
     id: "liven_ambient0",
     name: "Sonicware Liven Ambient Ø",
-    defaultChannel: 1,
+    defaultChannel: 4,
+    notes: ["Some CC assignments may vary; verify on device."],
     cc: [
       { id: "layer_blend", label: "Layer Blend", cc: 12 },
+      { id: "tape_wow_flutter", label: "Tape FX (Wow/Flutter)", cc: 21 },
+      { id: "reverb_mix", label: "Reverb Mix", cc: 25 },
       { id: "filter_cutoff", label: "Filter Cutoff", cc: 74 },
-      { id: "reverb_mix", label: "Reverb Mix", cc: 94 },
-      { id: "tape_wow_flutter", label: "Tape Wow/Flutter", cc: 21 },
       { id: "random_dice", label: "Random (Dice)", cc: 102 }
     ]
   }
@@ -89,3 +110,4 @@ export function getInstrumentProfile(id: string | null | undefined): InstrumentP
   if (!id) return null;
   return INSTRUMENT_PROFILES.find((p) => p.id === id) ?? null;
 }
+

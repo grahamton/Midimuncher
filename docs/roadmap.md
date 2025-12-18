@@ -1,34 +1,44 @@
 # Roadmap
 
-Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app -> OXI over USB MIDI, OXI routes DIN/CV/other outs). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
+Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app → OXI over USB MIDI, OXI routes DIN/CV/other outs). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
 
 ## Phases
 
 - **Phase 0 · MIDI backend spike (done)**
-  - Added `IMidiBackend` abstraction; WinMM provider; stub Windows MIDI Services provider behind feature flag.
-  - Diagnostics panel to send a test note.
-  - Backend selector UI.
+  - Backend abstraction + WinMM provider; stub Windows MIDI Services provider.
+  - Backend selector UI and basic diagnostics (send test note).
 
-- **Phase 1 · Device graph + routing (in progress)**
-  - Device model (max 8) with in/out/clock flags, default channel, port binding.
-  - Routing rules with filters/channel force/passthrough/clock thinning; loop guard; device-aware route creation.
-  - Monitor view with log cap indicator and clear control.
+- **Phase 1 · Device graph + routing (mostly done)**
+  - Device model (max 8) with port binding, default channel, clock flag, and instrument selection.
+  - Routing patchbay with filters, channel force/passthrough, clock thinning, loop guard, and device-aware route creation.
+  - Monitor view with backend/port context, log cap indicator, and clear control.
+  - Remaining: persistence of devices/routes, optional “merge” controls, clearer OXI port labeling.
 
-- **Phase 2 · Mapping engine v1**
-  - `ControlElement` with 8 slots; slot: type (CC/NRPN/note/PC), channel, param, min/max, curve, target device, enabled.
-  - MIDI Learn workflow; curve presets (linear, expo, log).
-  - UI: mapping grid (controls left, slot editor right).
+- **Phase 2 · Mapping engine v1 (in progress)**
+  - Virtual controls with 8 CC slots each (per-slot curve, min/max, optional channel override, device target).
+  - Curated CC presets pulled from the instrument registry for quick slot selection.
+  - Remaining: MIDI Learn, non-CC messages (NRPN/note/PC), button semantics (toggle/momentary), save/load.
 
 - **Phase 3 · Snapshots, Jump, Commit**
-  - 20 banks × 20 snapshots; snapshot stores control values + up to 8 one-shots.
+  - Snapshot = per-device CC state + optional one-shots; stores BPM and metadata.
+  - 20 banks × 20 snapshots per project.
   - Jump (fade, incl. zero), Commit (cycle-end, no fade); global cycle length 1–32 bars.
-  - UI: performance view with snapshot grid, Jump/Commit buttons, fade time, cycle display.
+  - Burst limiting on recall: 5–10ms spacing between outgoing messages to avoid choking OXI/synth buffers.
+  - “Global P-lock” mental model: the hardware sequencer runs the patterns; snapshots reset global params.
 
 - **Phase 4 · Chain mode**
   - Up to 20 chains, 64 steps each; step/auto-advance quantized to cycle boundaries.
   - UI: chain editor (list of steps), transport controls.
 
 - **Phase 5 · OXI integration**
+  - OXI configuration surfaced in docs and UI hints:
+    - USB mode: Device
+    - OXI Split (A/B/C ports) to expand available channels
+    - Thru expectations (avoid feedback loops)
+  - Transport control via OXI CC transport messages (requires “CC Transport Msgs” enabled on OXI):
+    - CC 105: Stop
+    - CC 106: Play
+    - CC 107: Record (toggle)
   - OXI-aware templates and routing presets; port labeling/wizard.
   - OXI “sanity test” (mode/firmware check, round-trip messages).
   - Optional: consume OXI transport/clock to align cycles.
@@ -50,5 +60,5 @@ Goal: Build a snapshot-driven performance controller in software, using the OXI 
 
 - `/midi`: `IMidiBackend`, WinMM provider, Windows MIDI Services provider (feature-flagged).
 - `/core`: routing graph, mapping engine, snapshot engine, scheduler.
-- `/ui`: setup, mapping, performance, chain views.
+- `/ui`: setup, routing, mapping, performance, chain, monitor views.
 - `/tests`: mapping/snapshot determinism; scheduler boundary cases.
