@@ -139,7 +139,8 @@ export function App() {
 
     const unsubscribe = midiApi.onEvent((evt) => {
       const target = learnTargetRef.current;
-      if (target && evt.msg.t === "cc") {
+      const msg = evt.msg;
+      if (target && msg.t === "cc") {
         const currentSelectedIn = selectedInRef.current;
         if (!currentSelectedIn || evt.src.id === currentSelectedIn) {
           learnTargetRef.current = null;
@@ -162,8 +163,8 @@ export function App() {
                 slots[target.slotIndex] = {
                   enabled: true,
                   kind: "cc",
-                  cc: clampMidi(evt.msg.cc),
-                  channel: clampChannel(evt.msg.ch),
+                  cc: clampMidi(msg.cc),
+                  channel: clampChannel(msg.ch),
                   min: 0,
                   max: 127,
                   curve: "linear",
@@ -173,8 +174,8 @@ export function App() {
                 slots[target.slotIndex] = {
                   ...existing,
                   enabled: true,
-                  cc: clampMidi(evt.msg.cc),
-                  channel: clampChannel(evt.msg.ch),
+                  cc: clampMidi(msg.cc),
+                  channel: clampChannel(msg.ch),
                   targetDeviceId: existing.targetDeviceId ?? fallbackTarget
                 };
               }

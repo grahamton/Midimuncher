@@ -60,7 +60,17 @@ importers:
         specifier: ^7.2.0
         version: 7.2.0
 
-  packages/core: {}
+  packages/core:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.19.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
 packages:
 
