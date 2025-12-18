@@ -4,6 +4,8 @@ import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
+const DIAG_NOTE = 60;
+const DIAG_CHANNEL = 1;
 
 type Device = {
   id: string;
@@ -35,6 +37,8 @@ export function App() {
   const [allowTransport, setAllowTransport] = useState(true);
   const [allowClock, setAllowClock] = useState(true);
   const [clockDiv, setClockDiv] = useState(1);
+  const [diagMessage, setDiagMessage] = useState<string | null>(null);
+  const [diagRunning, setDiagRunning] = useState(false);
 
   useEffect(() => {
     if (!midiApi) return;
@@ -107,6 +111,31 @@ export function App() {
     await midiApi.setBackend(id);
     await refreshBackends();
     await refreshPorts();
+  }
+
+  async function runDiagnostics() {
+    if (!midiApi) return;
+    if (!selectedOut) {
+      setDiagMessage("Select an output port first.");
+      return;
+    }
+    setDiagRunning(true);
+    setDiagMessage("Sending test note...");
+    try {
+      const ok = await midiApi.send({
+        portId: selectedOut,
+        msg: { t: "noteOn", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 100 }
+      });
+      setTimeout(() => {
+        midiApi.send({ portId: selectedOut, msg: { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 } });
+      }, 150);
+      setDiagMessage(ok ? "Test note sent. Check downstream device/monitor." : "Send failed.");
+    } catch (err) {
+      console.error(err);
+      setDiagMessage("Diagnostics failed to send.");
+    } finally {
+      setDiagRunning(false);
+    }
   }
 
   async function sendTestNote() {
@@ -252,6 +281,16 @@ export function App() {
                 ))}
               </select>
             )}
+          </div>
+          <div className="card">
+            <div className="card-head">
+              <h3>Diagnostics</h3>
+            </div>
+            <p className="muted">Sends a test note to the selected output.</p>
+            <button onClick={runDiagnostics} disabled={!selectedOut || diagRunning}>
+              {diagRunning ? "Testing..." : "Run diagnostics"}
+            </button>
+            {diagMessage ? <p className="muted">{diagMessage}</p> : null}
           </div>
           <DeviceSelect
             title="Input (monitor)"
