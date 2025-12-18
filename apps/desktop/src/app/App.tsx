@@ -1,14 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MidiEvent, MidiMsg } from "@midi-playground/core";
-import type { MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
+import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
 
 const LOG_LIMIT = 100;
+const MAX_DEVICES = 8;
+
+type Device = {
+  id: string;
+  name: string;
+  inputId: string | null;
+  outputId: string | null;
+  channel: number;
+  clockEnabled: boolean;
+};
 
 export function App() {
   const midiApi = typeof window !== "undefined" ? window.midi : undefined;
   const [ports, setPorts] = useState<MidiPorts>({ inputs: [], outputs: [] });
+  const [backends, setBackends] = useState<MidiBackendInfo[]>([]);
   const [selectedIn, setSelectedIn] = useState<string | null>(null);
   const [selectedOut, setSelectedOut] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [log, setLog] = useState<MidiEvent[]>([]);
   const [ccValue, setCcValue] = useState(64);
   const [note, setNote] = useState(60);
@@ -26,6 +39,7 @@ export function App() {
   useEffect(() => {
     if (!midiApi) return;
     refreshPorts();
+    refreshBackends();
     const unsubscribe = midiApi.onEvent((evt) => {
       setLog((current) => [evt, ...current].slice(0, LOG_LIMIT));
     });
@@ -78,6 +92,23 @@ export function App() {
     }
   }
 
+  async function refreshBackends() {
+    if (!midiApi) return;
+    try {
+      const infos = await midiApi.listBackends();
+      setBackends(infos);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function selectBackend(id: string) {
+    if (!midiApi) return;
+    await midiApi.setBackend(id);
+    await refreshBackends();
+    await refreshPorts();
+  }
+
   async function sendTestNote() {
     if (!midiApi || !selectedOut) return;
     const channel = 1;
@@ -101,8 +132,40 @@ export function App() {
     });
   }
 
+  function addDevice() {
+    if (devices.length >= MAX_DEVICES) return;
+    const nextIndex = devices.length + 1;
+    setDevices((current) => [
+      ...current,
+      {
+        id: `device-${Date.now().toString(36)}-${nextIndex}`,
+        name: `Device ${nextIndex}`,
+        inputId: ports.inputs[0]?.id ?? null,
+        outputId: ports.outputs[0]?.id ?? null,
+        channel: 1,
+        clockEnabled: true
+      }
+    ]);
+  }
+
+  function updateDevice(id: string, partial: Partial<Device>) {
+    setDevices((current) => current.map((d) => (d.id === id ? { ...d, ...partial } : d)));
+  }
+
+  function removeDevice(id: string) {
+    setDevices((current) => current.filter((d) => d.id !== id));
+    if (selectedDeviceId === id) {
+      setSelectedDeviceId(null);
+    }
+  }
+
   function addRoute() {
-    if (!midiApi || !selectedIn || !selectedOut) return;
+    if (!midiApi) return;
+    const device = selectedDeviceId ? devices.find((d) => d.id === selectedDeviceId) : null;
+    const fromId = device?.inputId ?? selectedIn;
+    const toId = device?.outputId ?? selectedOut;
+    if (!fromId || !toId) return;
+    const channelToForce = device?.channel ?? routeChannel;
     const allowTypes: MidiMsg["t"][] = [];
     if (allowNotes) {
       allowTypes.push("noteOn", "noteOff");
@@ -125,10 +188,10 @@ export function App() {
     };
     const route: RouteConfig = {
       id: makeRouteId(),
-      fromId: selectedIn,
-      toId: selectedOut,
+      fromId,
+      toId,
       channelMode: forceChannelEnabled ? "force" : "passthrough",
-      forceChannel: forceChannelEnabled ? clampChannel(routeChannel) : undefined,
+      forceChannel: forceChannelEnabled ? clampChannel(channelToForce) : undefined,
       filter
     };
     setRoutes((current) => [...current, route]);
@@ -167,10 +230,29 @@ export function App() {
 
       <section className="panel">
         <div className="panel-head">
-          <h2>Devices</h2>
-          <p>Pick the USB endpoints you want to monitor and send to.</p>
+          <h2>Devices & Backend</h2>
+          <p>Pick backend, set up to 8 devices, and choose defaults.</p>
         </div>
         <div className="grid two">
+          <div className="card">
+            <div className="card-head">
+              <h3>MIDI backend</h3>
+            </div>
+            {backends.length === 0 ? (
+              <p className="muted">No backend info yet.</p>
+            ) : (
+              <select
+                value={backends.find((b) => b.selected)?.id ?? ""}
+                onChange={(e) => selectBackend(e.target.value)}
+              >
+                {backends.map((b) => (
+                  <option key={b.id} value={b.id} disabled={!b.available}>
+                    {b.label} {b.available ? "" : "(unavailable)"}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <DeviceSelect
             title="Input (monitor)"
             ports={ports.inputs}
@@ -187,10 +269,93 @@ export function App() {
           />
           <div className="card">
             <div className="card-head">
+              <h3>Devices</h3>
+              <span className="pill">
+                {devices.length}/{MAX_DEVICES}
+              </span>
+            </div>
+            {devices.length === 0 ? <p className="muted">Add devices to mirror your rig.</p> : null}
+            <div className="stack">
+              {devices.map((d, idx) => (
+                <div key={d.id} className="device-row">
+                  <div className="device-header">
+                    <input
+                      type="text"
+                      value={d.name}
+                      onChange={(e) => updateDevice(d.id, { name: e.target.value })}
+                      aria-label="Device name"
+                    />
+                    <button className="ghost" onClick={() => setSelectedDeviceId(d.id)}>
+                      {selectedDeviceId === d.id ? "Selected" : "Use for routes"}
+                    </button>
+                    <button className="ghost" onClick={() => removeDevice(d.id)}>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="device-grid">
+                    <label className="field">
+                      <span>Input</span>
+                      <select
+                        value={d.inputId ?? ""}
+                        onChange={(e) => updateDevice(d.id, { inputId: e.target.value || null })}
+                      >
+                        <option value="">None</option>
+                        {ports.inputs.map((p) => (
+                          <option key={`${d.id}-in-${p.id}`} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Output</span>
+                      <select
+                        value={d.outputId ?? ""}
+                        onChange={(e) => updateDevice(d.id, { outputId: e.target.value || null })}
+                      >
+                        <option value="">None</option>
+                        {ports.outputs.map((p) => (
+                          <option key={`${d.id}-out-${p.id}`} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Default channel</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={16}
+                        value={d.channel}
+                        onChange={(e) => updateDevice(d.id, { channel: clampChannel(Number(e.target.value)) })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Clock</span>
+                      <div className="chip">
+                        <input
+                          type="checkbox"
+                          checked={d.clockEnabled}
+                          onChange={(e) => updateDevice(d.id, { clockEnabled: e.target.checked })}
+                        />{" "}
+                        Enable
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={addDevice} disabled={devices.length >= MAX_DEVICES}>
+              Add device
+            </button>
+          </div>
+          <div className="card">
+            <div className="card-head">
               <h3>Create route</h3>
               <span className="pill">Patchbay</span>
             </div>
-            <p className="muted">Forward selected input to output with optional filters.</p>
+            <p className="muted">Forward input to output with optional filters.</p>
             <label className="field">
               <span>Force channel</span>
               <div style={{ display: "flex", gap: 8 }}>
@@ -248,7 +413,18 @@ export function App() {
                 onChange={(e) => setClockDiv(Math.max(1, Math.round(Number(e.target.value) || 1)))}
               />
             </label>
-            <button onClick={addRoute} disabled={!selectedIn || !selectedOut}>
+            <label className="field">
+              <span>Route using device (optional)</span>
+              <select value={selectedDeviceId ?? ""} onChange={(e) => setSelectedDeviceId(e.target.value || null)}>
+                <option value="">None</option>
+                {devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button onClick={addRoute} disabled={!selectedIn && !selectedOut && !selectedDeviceId}>
               Add route
             </button>
           </div>
