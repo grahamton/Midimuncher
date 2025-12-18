@@ -3,11 +3,13 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
 import type { MappingEmitPayload, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-import type { ProjectStateV1 } from "../shared/projectTypes";
+import type { ProjectStateV1, SequencerApplyPayload } from "../shared/projectTypes";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";
+import { SequencerHost } from "./sequencerHost";
 
 const midiBridge = new MidiBridge();
+const sequencerHost = new SequencerHost(midiBridge);
 let projectStore: ProjectStore | null = null;
 const isDev = !app.isPackaged;
 const appDir = __dirname;
@@ -85,6 +87,10 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle("sequencer:apply", (_event, payload: SequencerApplyPayload) => {
+    return sequencerHost.apply(payload);
+  });
+
   midiBridge.on("midi", (evt: MidiEvent) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("midi:event", evt);
@@ -108,12 +114,14 @@ app.on("before-quit", (e) => {
       .flush()
       .catch(() => undefined)
       .finally(() => {
+        sequencerHost.dispose();
         midiBridge.closeAll();
         app.exit(0);
       });
     return;
   }
 
+  sequencerHost.dispose();
   midiBridge.closeAll();
 });
 

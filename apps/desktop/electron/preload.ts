@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { MidiEvent } from "@midi-playground/core";
 import type { MappingEmitPayload, MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-import type { ProjectDocV1, ProjectStateV1 } from "../shared/projectTypes";
+import type { ProjectDocV1, ProjectStateV1, SequencerApplyPayload } from "../shared/projectTypes";
 
 const midiApi = {
   listPorts: (): Promise<MidiPorts> => ipcRenderer.invoke("midi:listPorts"),
@@ -15,6 +15,7 @@ const midiApi = {
   loadProject: (): Promise<ProjectDocV1 | null> => ipcRenderer.invoke("project:load"),
   setProjectState: (state: ProjectStateV1): Promise<boolean> => ipcRenderer.invoke("project:setState", state),
   flushProject: (): Promise<boolean> => ipcRenderer.invoke("project:flush"),
+  applySequencer: (payload: SequencerApplyPayload): Promise<boolean> => ipcRenderer.invoke("sequencer:apply", payload),
   onEvent: (listener: (evt: MidiEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, data: MidiEvent) => listener(data);
     ipcRenderer.on("midi:event", handler);

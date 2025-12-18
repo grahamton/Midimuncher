@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import { MAX_SEQUENCER_CHAINS, MAX_SEQUENCER_STEPS, defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
-import { defaultProjectState } from "../../shared/projectTypes";
-import type { AppView, DeviceConfig, ProjectStateV1 } from "../../shared/projectTypes";
+import { defaultProjectState, defaultSequencerState, defaultSequencerStep } from "../../shared/projectTypes";
+import type {
+  AppView,
+  DeviceConfig,
+  ProjectStateV1,
+  SequencerApplyPayload,
+  SequencerChainConfig,
+  SequencerProjectState,
+  SequencerStepConfig
+} from "../../shared/projectTypes";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
@@ -48,6 +56,7 @@ export function App() {
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [sequencer, setSequencer] = useState<SequencerProjectState>(() => defaultSequencerState());
   const lastSentStateJsonRef = useRef<string | null>(null);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
@@ -98,6 +107,7 @@ export function App() {
         setClockDiv(state.ui?.routeBuilder?.clockDiv ?? 1);
         setNote(state.ui?.diagnostics?.note ?? 60);
         setCcValue(state.ui?.diagnostics?.ccValue ?? 64);
+        setSequencer(state.sequencer ?? defaultSequencerState());
       }
 
       await refreshBackends();
@@ -230,6 +240,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
+      sequencer,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -291,9 +302,22 @@ export function App() {
     allowTransport,
     allowClock,
     clockDiv,
+    sequencer,
     note,
     ccValue
   ]);
+
+  useEffect(() => {
+    if (!midiApi || !projectHydrated) return;
+    const payload: SequencerApplyPayload = {
+      chains: sequencer.chains,
+      activeChainId: sequencer.activeChainId,
+      transport: sequencer.transport,
+      world: sequencer.world,
+      devices
+    };
+    void midiApi.applySequencer(payload).catch((err) => console.error("applySequencer failed", err));
+  }, [midiApi, projectHydrated, sequencer, devices]);
 
   useEffect(() => {
     if (!midiApi || !projectHydrated) return;
@@ -310,6 +334,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
+      sequencer,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -354,6 +379,7 @@ export function App() {
     allowTransport,
     allowClock,
     clockDiv,
+    sequencer,
     note,
     ccValue
   ]);
@@ -388,6 +414,7 @@ export function App() {
     if (!ok) return;
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
+    const sequencerState = defaultSequencerState();
     const base = defaultProjectState();
     const state: ProjectStateV1 = {
       ...base,
@@ -396,7 +423,8 @@ export function App() {
       selectedOut,
       selectedDeviceId: null,
       controls: defaultControls(),
-      selectedControlId: "knob-1"
+      selectedControlId: "knob-1",
+      sequencer: sequencerState
     };
 
     setActiveView(state.activeView);
@@ -415,6 +443,7 @@ export function App() {
     setClockDiv(state.ui.routeBuilder.clockDiv);
     setNote(state.ui.diagnostics.note);
     setCcValue(state.ui.diagnostics.ccValue);
+    setSequencer(sequencerState);
 
     setSaveStatus("saving");
     const saved = await midiApi.setProjectState(state);
@@ -634,6 +663,102 @@ export function App() {
     await midiApi.send({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
   }
 
+  const activeChain = useMemo(() => {
+    const found = sequencer.chains.find((c) => c.id === sequencer.activeChainId);
+    return found ?? sequencer.chains[0] ?? null;
+  }, [sequencer]);
+
+  function makeStep(chainId: string, index: number): SequencerStepConfig {
+    const base = defaultSequencerStep(index);
+    return {
+      ...base,
+      id: `${chainId}-step-${index + 1}`,
+      name: `Step ${index + 1}`
+    };
+  }
+
+  function addChain() {
+    setSequencer((current) => {
+      if (current.chains.length >= MAX_SEQUENCER_CHAINS) return current;
+      const chainId = `chain-${Date.now().toString(36)}`;
+      const steps = Array.from({ length: 16 }, (_v, idx) => makeStep(chainId, idx));
+      const chain: SequencerChainConfig = {
+        id: chainId,
+        name: `Chain ${current.chains.length + 1}`,
+        cycleLength: steps.length,
+        steps
+      };
+      return {
+        ...current,
+        chains: [...current.chains, chain],
+        activeChainId: chain.id
+      };
+    });
+  }
+
+  function removeChain(id: string) {
+    setSequencer((current) => {
+      if (current.chains.length <= 1) return current;
+      const chains = current.chains.filter((c) => c.id !== id);
+      const activeChainId = current.activeChainId === id ? chains[0]?.id ?? null : current.activeChainId;
+      return { ...current, chains, activeChainId };
+    });
+  }
+
+  function updateChain(id: string, updater: (chain: SequencerChainConfig) => SequencerChainConfig) {
+    setSequencer((current) => {
+      const chains = current.chains.map((c) => (c.id === id ? updater(c) : c));
+      const activeChainId = chains.some((c) => c.id === current.activeChainId)
+        ? current.activeChainId
+        : chains[0]?.id ?? null;
+      return { ...current, chains, activeChainId };
+    });
+  }
+
+  function resizeChain(id: string, nextLength: number) {
+    const length = Math.min(Math.max(Math.round(nextLength), 1), MAX_SEQUENCER_STEPS);
+    updateChain(id, (chain) => {
+      let steps = chain.steps;
+      if (steps.length < length) {
+        const additions = Array.from({ length: length - steps.length }, (_v, idx) => makeStep(id, steps.length + idx));
+        steps = [...steps, ...additions];
+      } else if (steps.length > length) {
+        steps = steps.slice(0, length);
+      }
+      return { ...chain, cycleLength: length, steps };
+    });
+  }
+
+  function updateStep(chainId: string, stepId: string, partial: Partial<SequencerStepConfig>) {
+    updateChain(chainId, (chain) => ({
+      ...chain,
+      steps: chain.steps.map((s) => (s.id === stepId ? { ...s, ...partial } : s))
+    }));
+  }
+
+  function updateStepMsg(chainId: string, stepId: string, partial: Partial<MidiMsg>) {
+    updateChain(chainId, (chain) => ({
+      ...chain,
+      steps: chain.steps.map((s) => {
+        if (s.id !== stepId) return s;
+        const base: MidiMsg = s.msg && s.msg.t === "noteOn" ? s.msg : { t: "noteOn", ch: s.channel ?? 1, note: 60, vel: 100 };
+        return { ...s, msg: { ...base, ...(partial as any) } };
+      })
+    }));
+  }
+
+  function setActiveChain(id: string) {
+    setSequencer((current) => ({ ...current, activeChainId: id }));
+  }
+
+  function setTransport(partial: Partial<SequencerProjectState["transport"]>) {
+    setSequencer((current) => ({ ...current, transport: { ...current.transport, ...partial } }));
+  }
+
+  function setWorld(partial: Partial<SequencerProjectState["world"]>) {
+    setSequencer((current) => ({ ...current, world: { ...current.world, ...partial } }));
+  }
+
   return (
     <div className="page">
       {!midiApi ? (
@@ -677,6 +802,9 @@ export function App() {
               onClick={() => setActiveView("mapping")}
             >
               Mapping
+            </button>
+            <button className={activeView === "chains" ? "ghost active" : "ghost"} onClick={() => setActiveView("chains")}>
+              Chains
             </button>
             <button className={activeView === "monitor" ? "ghost active" : "ghost"} onClick={() => setActiveView("monitor")}>
               Monitor
@@ -1105,6 +1233,288 @@ export function App() {
                 </button>
               </div>
             </div>
+          </section>
+        </>
+      ) : null}
+
+      {activeView === "chains" ? (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Transport & chains</h2>
+              <p>Up to 20 chains, 64 steps. Chain changes are quantized to cycle boundaries.</p>
+            </div>
+            <div className="grid two">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Transport</h3>
+                  <span className="pill">{sequencer.transport.running ? "Running" : "Stopped"}</span>
+                </div>
+                <label className="field">
+                  <span>BPM</span>
+                  <input
+                    type="number"
+                    min={30}
+                    max={240}
+                    value={sequencer.transport.bpm}
+                    onChange={(e) =>
+                      setTransport({ bpm: Math.min(Math.max(Math.round(Number(e.target.value) || 120), 30), 240) })
+                    }
+                  />
+                </label>
+                <div className="chips">
+                  <button className="ghost" onClick={() => setTransport({ running: true })}>
+                    Start
+                  </button>
+                  <button className="ghost" onClick={() => setTransport({ running: false })}>
+                    Stop
+                  </button>
+                </div>
+                <p className="muted">Clock is sent to devices with clock enabled and to all chain targets.</p>
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <h3>Chains</h3>
+                  <span className="pill">
+                    {sequencer.chains.length}/{MAX_SEQUENCER_CHAINS}
+                  </span>
+                </div>
+                <div className="stack">
+                  {sequencer.chains.map((chain) => (
+                    <div key={chain.id} className="device-row">
+                      <input
+                        type="text"
+                        value={chain.name}
+                        onChange={(e) => updateChain(chain.id, (c) => ({ ...c, name: e.target.value }))}
+                        aria-label={`${chain.name} name`}
+                      />
+                      <div className="chips">
+                        <button
+                          className={sequencer.activeChainId === chain.id ? "ghost active" : "ghost"}
+                          onClick={() => setActiveChain(chain.id)}
+                        >
+                          {sequencer.activeChainId === chain.id ? "Active" : "Queue"}
+                        </button>
+                        <button className="ghost" onClick={() => removeChain(chain.id)} disabled={sequencer.chains.length <= 1}>
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={addChain} disabled={sequencer.chains.length >= MAX_SEQUENCER_CHAINS}>
+                  Add chain
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>World state</h2>
+              <p>Filters + mutation hooks scale event survivors.</p>
+            </div>
+            <div className="grid two">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Dynamics</h3>
+                </div>
+                <label className="field">
+                  <span>Energy</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={sequencer.world.energy}
+                    onChange={(e) => setWorld({ energy: Number(e.target.value) })}
+                  />
+                  <output>{sequencer.world.energy.toFixed(2)}</output>
+                </label>
+                <label className="field">
+                  <span>Density</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={sequencer.world.density}
+                    onChange={(e) => setWorld({ density: Number(e.target.value) })}
+                  />
+                  <output>{sequencer.world.density.toFixed(2)}</output>
+                </label>
+                <label className="field">
+                  <span>Stability</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={sequencer.world.stability}
+                    onChange={(e) => setWorld({ stability: Number(e.target.value) })}
+                  />
+                  <output>{sequencer.world.stability.toFixed(2)}</output>
+                </label>
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <h3>Mutation</h3>
+                </div>
+                <label className="field">
+                  <span>Mutation pressure</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={sequencer.world.mutationPressure}
+                    onChange={(e) => setWorld({ mutationPressure: Number(e.target.value) })}
+                  />
+                  <output>{sequencer.world.mutationPressure.toFixed(2)}</output>
+                </label>
+                <label className="field">
+                  <span>Silence debt</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={sequencer.world.silenceDebt}
+                    onChange={(e) => setWorld({ silenceDebt: Number(e.target.value) })}
+                  />
+                  <output>{sequencer.world.silenceDebt.toFixed(2)}</output>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Chain steps</h2>
+              <p>{activeChain ? `${activeChain.steps.length} steps` : "No chain selected"}</p>
+            </div>
+            {!activeChain ? (
+              <p className="muted">Add or select a chain to edit its steps.</p>
+            ) : (
+              <>
+                <label className="field">
+                  <span>Cycle length (steps)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_SEQUENCER_STEPS}
+                    value={activeChain.cycleLength}
+                    onChange={(e) => resizeChain(activeChain.id, Number(e.target.value) || activeChain.cycleLength)}
+                  />
+                </label>
+                <div className="step-grid">
+                  {activeChain.steps.map((step, idx) => {
+                    const msg = step.msg && step.msg.t === "noteOn" ? step.msg : { t: "noteOn", ch: step.channel ?? 1, note: 60, vel: 100 };
+                    return (
+                      <div key={step.id} className="step-card">
+                        <div className="step-card-head">
+                          <div>
+                            <p className="label">Step {idx + 1}</p>
+                            <p className="muted">{step.enabled ? "Active" : "Muted"}</p>
+                          </div>
+                          <label className="chip">
+                            <input
+                              type="checkbox"
+                              checked={step.enabled}
+                              onChange={(e) => updateStep(activeChain.id, step.id, { enabled: e.target.checked })}
+                            />
+                            Enable
+                          </label>
+                        </div>
+
+                        <div className="grid two">
+                          <label className="field">
+                            <span>Note</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={127}
+                              value={msg.note}
+                              onChange={(e) => updateStepMsg(activeChain.id, step.id, { note: clampMidi(Number(e.target.value)) })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Velocity</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={127}
+                              value={msg.vel}
+                              onChange={(e) => updateStepMsg(activeChain.id, step.id, { vel: clampMidi(Number(e.target.value)) })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Weight</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={8}
+                              value={step.weight}
+                              onChange={(e) => updateStep(activeChain.id, step.id, { weight: Math.min(Math.max(Number(e.target.value) || 0, 0), 8) })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Gate (ms)</span>
+                            <input
+                              type="number"
+                              min={10}
+                              max={2000}
+                              value={step.gateMs}
+                              onChange={(e) => updateStep(activeChain.id, step.id, { gateMs: Math.min(Math.max(Number(e.target.value) || 0, 10), 2000) })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Channel</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={16}
+                              value={step.channel ?? ""}
+                              placeholder="Use device"
+                              onChange={(e) => updateStep(activeChain.id, step.id, { channel: e.target.value ? clampChannel(Number(e.target.value)) : null })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Target device</span>
+                            <select
+                              value={step.targetDeviceId ?? ""}
+                              onChange={(e) => updateStep(activeChain.id, step.id, { targetDeviceId: e.target.value || null })}
+                            >
+                              <option value="">None</option>
+                              {devices.map((d) => (
+                                <option key={`${activeChain.id}-dev-${d.id}`} value={d.id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Target port</span>
+                            <select
+                              value={step.targetPortId ?? ""}
+                              onChange={(e) => updateStep(activeChain.id, step.id, { targetPortId: e.target.value || null })}
+                            >
+                              <option value="">Use device output</option>
+                              {ports.outputs.map((p) => (
+                                <option key={`${activeChain.id}-port-${p.id}`} value={p.id}>
+                                  {formatPortLabel(p.name)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </section>
         </>
       ) : null}
