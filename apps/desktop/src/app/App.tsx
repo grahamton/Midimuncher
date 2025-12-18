@@ -63,7 +63,7 @@ export function App() {
   const [clockDiv, setClockDiv] = useState(1);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
-  const [activeView, setActiveView] = useState<"setup" | "routes" | "mapping" | "monitor">("setup");
+  const [activeView, setActiveView] = useState<"setup" | "routes" | "mapping" | "monitor" | "help">("setup");
   const [controls, setControls] = useState<Control[]>(() => [
     { id: "knob-1", type: "knob", label: "Knob 1", value: 0, slots: defaultSlots() as Slot[] },
     { id: "knob-2", type: "knob", label: "Knob 2", value: 0, slots: defaultSlots() as Slot[] },
@@ -159,8 +159,10 @@ export function App() {
         portId: selectedOut,
         msg: { t: "noteOn", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 100 }
       });
+      logOutgoing(selectedOut, { t: "noteOn", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 100 });
       setTimeout(() => {
         midiApi.send({ portId: selectedOut, msg: { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 } });
+        logOutgoing(selectedOut, { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 });
       }, 150);
       setDiagMessage(ok ? "Test note sent. Check downstream device/monitor." : "Send failed.");
     } catch (err) {
@@ -178,11 +180,13 @@ export function App() {
       portId: selectedOut,
       msg: { t: "noteOn", ch: channel, note, vel: 110 }
     });
+    logOutgoing(selectedOut, { t: "noteOn", ch: channel, note, vel: 110 });
     setTimeout(() => {
       midiApi.send({
         portId: selectedOut,
         msg: { t: "noteOff", ch: channel, note, vel: 0 }
       });
+      logOutgoing(selectedOut, { t: "noteOff", ch: channel, note, vel: 0 });
     }, 220);
   }
 
@@ -192,6 +196,7 @@ export function App() {
       portId: selectedOut,
       msg: { t: "cc", ch: 1, cc: 1, val: ccValue }
     });
+    logOutgoing(selectedOut, { t: "cc", ch: 1, cc: 1, val: ccValue });
   }
 
   function addDevice() {
@@ -269,6 +274,16 @@ export function App() {
     return found?.name ?? id;
   }
 
+  function logOutgoing(portId: string, msg: MidiMsg) {
+    const name = portName(portId);
+    const evt: MidiEvent = {
+      ts: Date.now(),
+      src: { id: `out:${portId}`, name: `OUT → ${name}`, kind: "virtual" },
+      msg
+    };
+    setLog((current) => [evt, ...current].slice(0, LOG_LIMIT));
+  }
+
   function clearLog() {
     setLog([]);
   }
@@ -309,7 +324,14 @@ export function App() {
         portId: target.outputId,
         msg: { t: "cc", ch: channel, cc: clampMidi(slot.cc), val: clampMidi(mapped) }
       });
+      logOutgoing(target.outputId, { t: "cc", ch: channel, cc: clampMidi(slot.cc), val: clampMidi(mapped) });
     }
+  }
+
+  async function sendOxiTransport(cc: 105 | 106 | 107) {
+    if (!midiApi || !selectedOut) return;
+    await midiApi.send({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
+    logOutgoing(selectedOut, { t: "cc", ch: 1, cc, val: 127 });
   }
 
   return (
@@ -349,6 +371,9 @@ export function App() {
             </button>
             <button className={activeView === "monitor" ? "ghost active" : "ghost"} onClick={() => setActiveView("monitor")}>
               Monitor
+            </button>
+            <button className={activeView === "help" ? "ghost active" : "ghost"} onClick={() => setActiveView("help")}>
+              Help
             </button>
           </nav>
         </div>
@@ -390,6 +415,23 @@ export function App() {
                   {diagRunning ? "Testing..." : "Run diagnostics"}
                 </button>
                 {diagMessage ? <p className="muted">{diagMessage}</p> : null}
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <h3>OXI transport</h3>
+                </div>
+                <p className="muted">Sends CC 105/106/107 to the selected output (requires “CC Transport Msgs” on OXI).</p>
+                <div className="chips">
+                  <button className="ghost" onClick={() => sendOxiTransport(106)} disabled={!selectedOut}>
+                    Play (CC 106)
+                  </button>
+                  <button className="ghost" onClick={() => sendOxiTransport(105)} disabled={!selectedOut}>
+                    Stop (CC 105)
+                  </button>
+                  <button className="ghost" onClick={() => sendOxiTransport(107)} disabled={!selectedOut}>
+                    Record (CC 107)
+                  </button>
+                </div>
               </div>
               <DeviceSelect
                 title="Input (monitor)"
@@ -936,6 +978,45 @@ export function App() {
             </div>
           </section>
         </>
+      ) : null}
+
+      {activeView === "help" ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>How to use this</h2>
+            <p>Quickstart for OXI-only now; synth rig later.</p>
+          </div>
+          <div className="grid two">
+            <div className="card">
+              <div className="card-head">
+                <h3>OXI-only quickstart</h3>
+              </div>
+              <ol className="help-list">
+                <li>Go to Setup and select your OXI output (Output (send)).</li>
+                <li>Optionally select your OXI input (Input (monitor)) to see notes/CC coming from the OXI.</li>
+                <li>Run Diagnostics to send a short test note (no synth required).</li>
+                <li>Open Monitor to see OUT events from the app and any IN events from OXI.</li>
+                <li>Try Mapping: enable a CC slot targeting a device with output bound to OXI, then move the control slider.</li>
+              </ol>
+              <p className="muted">
+                Tip: the Monitor now shows OUT events for actions Midimuncher sends, even if nothing is connected to OXI
+                DIN/TRS.
+              </p>
+            </div>
+            <div className="card">
+              <div className="card-head">
+                <h3>When you add synths</h3>
+              </div>
+              <ol className="help-list">
+                <li>Add devices (up to 8) and pick the instrument to get CC presets and default channels.</li>
+                <li>Bind each device output to the correct OXI port (A/B/C if Split is enabled).</li>
+                <li>Use Routing to forward MIDI from an input stream to a device output if needed.</li>
+                <li>Use Mapping to build “macros” (one control → many CCs across devices).</li>
+              </ol>
+              <p className="muted">Docs: see `docs/roadmap.md`, `docs/instruments.md`, and `docs/oxi-integration.md`.</p>
+            </div>
+          </div>
+        </section>
       ) : null}
     </div>
   );
