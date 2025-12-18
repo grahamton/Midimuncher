@@ -2,12 +2,20 @@ import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
-import type { MappingEmitPayload, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-import type { ProjectStateV1 } from "../shared/projectTypes";
+import type {
+  MappingEmitPayload,
+  MidiSendPayload,
+  RouteConfig,
+  SnapshotCapturePayload,
+  SnapshotRecallPayload
+} from "../shared/ipcTypes";
+import type { ProjectState } from "../shared/projectTypes";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";
+import { SnapshotService } from "./snapshotService";
 
 const midiBridge = new MidiBridge();
+const snapshotService = new SnapshotService(midiBridge);
 let projectStore: ProjectStore | null = null;
 const isDev = !app.isPackaged;
 const appDir = __dirname;
@@ -72,11 +80,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle("project:load", async () => {
     if (!projectStore) return null;
-    return projectStore.load();
+    const doc = await projectStore.load();
+    snapshotService.updateDevices(doc.state.devices);
+    return doc;
   });
-  ipcMain.handle("project:setState", (_event, state: ProjectStateV1) => {
+  ipcMain.handle("project:setState", (_event, state: ProjectState) => {
     if (!projectStore) return false;
     projectStore.setState(state);
+    snapshotService.updateDevices(state.devices);
     return true;
   });
   ipcMain.handle("project:flush", async () => {
@@ -84,8 +95,11 @@ app.whenReady().then(() => {
     await projectStore.flush();
     return true;
   });
+  ipcMain.handle("snapshot:capture", (_event, payload: SnapshotCapturePayload) => snapshotService.capture(payload));
+  ipcMain.handle("snapshot:recall", (_event, payload: SnapshotRecallPayload) => snapshotService.recall(payload));
 
   midiBridge.on("midi", (evt: MidiEvent) => {
+    snapshotService.ingest(evt);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("midi:event", evt);
     }
