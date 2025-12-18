@@ -8,7 +8,7 @@ import type {
   SnapshotCapturePayload,
   SnapshotRecallPayload
 } from "../../shared/ipcTypes";
-import type { ProjectDoc, ProjectState } from "../../shared/projectTypes";
+import type { ProjectDoc, ProjectState, SequencerApplyPayload } from "../../shared/projectTypes";
 
 export type MidiApi = {
   listPorts: () => Promise<MidiPorts>;
@@ -24,6 +24,7 @@ export type MidiApi = {
   flushProject: () => Promise<boolean>;
   captureSnapshot: (payload?: SnapshotCapturePayload) => Promise<SnapshotState>;
   recallSnapshot: (payload: SnapshotRecallPayload) => Promise<boolean>;
+  applySequencer: (payload: SequencerApplyPayload) => Promise<boolean>;
   onEvent: (listener: (evt: MidiEvent) => void) => () => void;
 };
 

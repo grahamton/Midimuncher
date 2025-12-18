@@ -1,4 +1,13 @@
-import type { ControlElement, SnapshotBurstLimit, SnapshotRecallStrategy, SnapshotState } from "@midi-playground/core";
+import {
+  MAX_SEQUENCER_CHAINS,
+  MAX_SEQUENCER_STEPS,
+  type ControlElement,
+  type MidiMsg,
+  type SnapshotBurstLimit,
+  type SnapshotRecallStrategy,
+  type SnapshotState,
+  type SequencerWorldState
+} from "@midi-playground/core";
 import type { RouteConfig } from "./ipcTypes";
 
 export type DeviceConfig = {
@@ -12,6 +21,47 @@ export type DeviceConfig = {
 };
 
 export type AppView = "setup" | "routes" | "mapping" | "monitor" | "help" | "snapshots";
+
+export type SequencerTransportState = {
+  bpm: number;
+  running: boolean;
+};
+
+export type SequencerStepConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  weight: number;
+  gateMs: number;
+  length: number;
+  channel: number | null;
+  targetDeviceId: string | null;
+  targetPortId: string | null;
+  msg: MidiMsg | null;
+  tags: string[];
+};
+
+export type SequencerChainConfig = {
+  id: string;
+  name: string;
+  cycleLength: number;
+  steps: SequencerStepConfig[];
+};
+
+export type SequencerProjectState = {
+  chains: SequencerChainConfig[];
+  activeChainId: string | null;
+  transport: SequencerTransportState;
+  world: SequencerWorldState;
+};
+
+export type SequencerApplyPayload = {
+  chains: SequencerChainConfig[];
+  activeChainId: string | null;
+  transport: SequencerTransportState;
+  world: SequencerWorldState;
+  devices: DeviceConfig[];
+};
 
 export type SnapshotSlotState = {
   id: string;
@@ -116,6 +166,62 @@ export function defaultSnapshotsState(): SnapshotsState {
   };
 }
 
+const DEFAULT_SEQUENCER_STEP_COUNT = 16;
+
+function defaultSequencerTransport(): SequencerTransportState {
+  return { bpm: 120, running: false };
+}
+
+export function defaultSequencerWorld(): SequencerWorldState {
+  return {
+    energy: 0.5,
+    density: 0.5,
+    stability: 0.5,
+    mutationPressure: 0.25,
+    silenceDebt: 0
+  };
+}
+
+export function defaultSequencerStep(index: number): SequencerStepConfig {
+  return {
+    id: `step-${index + 1}`,
+    name: `Step ${index + 1}`,
+    enabled: false,
+    weight: 1,
+    gateMs: 120,
+    length: 1,
+    channel: null,
+    targetDeviceId: null,
+    targetPortId: null,
+    msg: { t: "noteOn", ch: 1, note: 60, vel: 100 },
+    tags: []
+  };
+}
+
+function defaultSequencerChain(index: number): SequencerChainConfig {
+  const id = `chain-${index + 1}`;
+  const steps = Array.from({ length: DEFAULT_SEQUENCER_STEP_COUNT }, (_v, stepIdx) => ({
+    ...defaultSequencerStep(stepIdx),
+    id: `${id}-step-${stepIdx + 1}`
+  }));
+  return {
+    id,
+    name: `Chain ${index + 1}`,
+    cycleLength: steps.length,
+    steps
+  };
+}
+
+export function defaultSequencerState(): SequencerProjectState {
+  const chains = [defaultSequencerChain(0)];
+  return {
+    chains,
+    activeChainId: chains[0]?.id ?? null,
+    transport: defaultSequencerTransport(),
+    world: defaultSequencerWorld()
+  };
+}
+
 function defaultProjectStateV1(): ProjectStateV1 {
   return {
     backendId: null,
@@ -177,6 +283,118 @@ function asBooleanOr(value: unknown, fallback: boolean): boolean {
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function clamp01(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function clampBpm(value: unknown, fallback: number): number {
+  const bpm = Math.round(asNumberOr(value, fallback));
+  if (!Number.isFinite(bpm)) return fallback;
+  return Math.min(Math.max(bpm, 30), 240);
+}
+
+function clampStepLength(value: unknown, fallback: number): number {
+  const length = Math.round(asNumberOr(value, fallback));
+  if (!Number.isFinite(length)) return fallback;
+  return Math.min(Math.max(length, 1), MAX_SEQUENCER_STEPS);
+}
+
+function clampGateMs(value: unknown, fallback: number): number {
+  const gate = Math.round(asNumberOr(value, fallback));
+  if (!Number.isFinite(gate)) return fallback;
+  return Math.min(Math.max(gate, 10), 2000);
+}
+
+function clampWeight(value: unknown, fallback: number): number {
+  const weight = asNumberOr(value, fallback);
+  const safe = Number.isFinite(weight) ? weight : fallback;
+  return Math.min(Math.max(safe, 0), 8);
+}
+
+function clampChannelNullable(value: unknown): number | null {
+  if (value === null) return null;
+  if (typeof value !== "number") return null;
+  if (!Number.isFinite(value)) return null;
+  const ch = Math.round(value);
+  return Math.min(Math.max(ch, 1), 16);
+}
+
+function coerceSequencerWorld(raw: unknown, defaults: SequencerWorldState): SequencerWorldState {
+  const rec = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  return {
+    energy: clamp01(asNumberOr(rec.energy, defaults.energy), defaults.energy),
+    density: clamp01(asNumberOr(rec.density, defaults.density), defaults.density),
+    stability: clamp01(asNumberOr(rec.stability, defaults.stability), defaults.stability),
+    mutationPressure: clamp01(asNumberOr(rec.mutationPressure, defaults.mutationPressure), defaults.mutationPressure),
+    silenceDebt: clamp01(asNumberOr(rec.silenceDebt, defaults.silenceDebt), defaults.silenceDebt)
+  };
+}
+
+function coerceSequencerTransport(raw: unknown, defaults: SequencerTransportState): SequencerTransportState {
+  const rec = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  return {
+    bpm: clampBpm(rec.bpm, defaults.bpm),
+    running: asBooleanOr(rec.running, defaults.running)
+  };
+}
+
+function coerceSequencerStep(raw: unknown, index: number): SequencerStepConfig {
+  const defaults = defaultSequencerStep(index);
+  const rec = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const tags = asArray(rec.tags).filter((t): t is string => typeof t === "string");
+  const msg = rec.msg && typeof rec.msg === "object" ? (rec.msg as MidiMsg) : defaults.msg;
+  return {
+    id: typeof rec.id === "string" ? rec.id : defaults.id,
+    name: typeof rec.name === "string" ? rec.name : defaults.name,
+    enabled: asBooleanOr(rec.enabled, defaults.enabled),
+    weight: clampWeight(rec.weight, defaults.weight),
+    gateMs: clampGateMs(rec.gateMs, defaults.gateMs),
+    length: clampStepLength(rec.length, defaults.length),
+    channel: clampChannelNullable(rec.channel),
+    targetDeviceId: asStringOrNull(rec.targetDeviceId),
+    targetPortId: asStringOrNull(rec.targetPortId),
+    msg,
+    tags: tags.length > 0 ? tags : defaults.tags
+  };
+}
+
+function coerceSequencerChain(raw: unknown, index: number): SequencerChainConfig {
+  const defaults = defaultSequencerChain(index);
+  const rec = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const steps = asArray<Record<string, unknown>>(rec.steps)
+    .slice(0, MAX_SEQUENCER_STEPS)
+    .map((step, stepIdx) => coerceSequencerStep(step, stepIdx));
+  const safeSteps = steps.length > 0 ? steps : defaults.steps;
+  const cycleLength = Math.min(clampStepLength(rec.cycleLength, safeSteps.length), safeSteps.length || 1);
+  return {
+    id: typeof rec.id === "string" ? rec.id : defaults.id,
+    name: typeof rec.name === "string" ? rec.name : defaults.name,
+    cycleLength,
+    steps: safeSteps
+  };
+}
+
+function coerceSequencerState(rawState: unknown): SequencerProjectState {
+  const defaults = defaultSequencerState();
+  const raw = (rawState && typeof rawState === "object" ? (rawState as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const chains = asArray<Record<string, unknown>>(raw.chains)
+    .slice(0, MAX_SEQUENCER_CHAINS)
+    .map((c, idx) => coerceSequencerChain(c, idx));
+  const safeChains = chains.length > 0 ? chains : defaults.chains;
+  const activeChainId =
+    typeof raw.activeChainId === "string" && safeChains.some((c) => c.id === raw.activeChainId)
+      ? raw.activeChainId
+      : safeChains[0]?.id ?? null;
+
+  return {
+    chains: safeChains,
+    activeChainId,
+    transport: coerceSequencerTransport((raw as any)?.transport, defaults.transport),
+    world: coerceSequencerWorld((raw as any)?.world, defaults.world)
+  };
 }
 
 function coerceSnapshotSlot(raw: unknown, idx: number, fallbackName: string): SnapshotSlotState {
@@ -257,6 +475,7 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     string,
     unknown
   >;
+  const sequencer = coerceSequencerState((raw as any)?.sequencer);
 
   const view = raw.activeView;
   const activeView: AppView =
@@ -282,6 +501,7 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     routes: asArray<RouteConfig>(raw.routes),
     controls: asArray<ControlElement>(raw.controls),
     selectedControlId: asStringOrNull(raw.selectedControlId),
+    sequencer,
     ui: {
       routeBuilder: {
         forceChannelEnabled: asBooleanOr((raw.ui as any)?.routeBuilder?.forceChannelEnabled, stateDefaults.ui.routeBuilder.forceChannelEnabled),

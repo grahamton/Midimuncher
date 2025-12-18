@@ -4,6 +4,7 @@ export * from "./mapping/types";
 export * from "./mapping/curves";
 export * from "./mapping/engine";
 export * from "./routing/graph";
+export * from "./sequencers/runner";
 export * from "./sequencers/types";
 export * from "./snapshots/types";
 export * from "./snapshots/tracker";

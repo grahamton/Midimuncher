@@ -3,14 +3,16 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
 import type { MappingEmitPayload, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-import type { ProjectStateV1 } from "../shared/projectTypes";
+import type { ProjectState, SequencerApplyPayload } from "../shared/projectTypes";
 import type { BackendId } from "./backends/types";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";
 import { SnapshotService } from "./snapshotService";
+import { SequencerHost } from "./sequencerHost";
 
 const midiBridge = new MidiBridge();
 const snapshotService = new SnapshotService(midiBridge);
+const sequencerHost = new SequencerHost(midiBridge);
 let projectStore: ProjectStore | null = null;
 const isDev = !app.isPackaged;
 const appDir = __dirname;

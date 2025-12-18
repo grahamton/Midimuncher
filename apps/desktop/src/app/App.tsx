@@ -17,11 +17,21 @@ import type {
   SnapshotCapturePayload,
   SnapshotRecallPayload
 } from "../../shared/ipcTypes";
-import { defaultProjectState } from "../../shared/projectTypes";
+import {
+  MAX_SEQUENCER_CHAINS,
+  MAX_SEQUENCER_STEPS,
+  defaultProjectState,
+  defaultSequencerState,
+  defaultSequencerStep
+} from "../../shared/projectTypes";
 import type {
   AppView,
   DeviceConfig,
   ProjectState,
+  SequencerApplyPayload,
+  SequencerChainConfig,
+  SequencerProjectState,
+  SequencerStepConfig,
   SnapshotBankState,
   SnapshotSlotState,
   SnapshotsState

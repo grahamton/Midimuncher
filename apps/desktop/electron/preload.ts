@@ -9,7 +9,7 @@ import type {
   SnapshotCapturePayload,
   SnapshotRecallPayload
 } from "../shared/ipcTypes";
-import type { ProjectDoc, ProjectState } from "../shared/projectTypes";
+import type { ProjectDoc, ProjectState, SequencerApplyPayload } from "../shared/projectTypes";
 
 const midiApi = {
   listPorts: (): Promise<MidiPorts> => ipcRenderer.invoke("midi:listPorts"),
@@ -25,6 +25,7 @@ const midiApi = {
   flushProject: (): Promise<boolean> => ipcRenderer.invoke("project:flush"),
   captureSnapshot: (payload?: SnapshotCapturePayload): Promise<SnapshotState> => ipcRenderer.invoke("snapshot:capture", payload),
   recallSnapshot: (payload: SnapshotRecallPayload): Promise<boolean> => ipcRenderer.invoke("snapshot:recall", payload),
+  applySequencer: (payload: SequencerApplyPayload): Promise<boolean> => ipcRenderer.invoke("sequencer:apply", payload),
   onEvent: (listener: (evt: MidiEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, data: MidiEvent) => listener(data);
     ipcRenderer.on("midi:event", handler);
