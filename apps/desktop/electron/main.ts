@@ -2,14 +2,9 @@ import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
-import type {
-  MappingEmitPayload,
-  MidiSendPayload,
-  RouteConfig,
-  SnapshotCapturePayload,
-  SnapshotRecallPayload
-} from "../shared/ipcTypes";
-import type { ProjectState } from "../shared/projectTypes";
+import type { MappingEmitPayload, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type { ProjectStateV1 } from "../shared/projectTypes";
+import type { BackendId } from "./backends/types";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";
 import { SnapshotService } from "./snapshotService";
@@ -58,7 +53,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("midi:listPorts", () => midiBridge.listPorts());
   ipcMain.handle("midi:listBackends", () => midiBridge.listBackends());
-  ipcMain.handle("midi:setBackend", (_event, id: string) => midiBridge.setBackend(id));
+  ipcMain.handle("midi:setBackend", (_event, id: BackendId) => midiBridge.setBackend(id));
   ipcMain.handle("midi:openIn", (_event, id: string) => midiBridge.openIn(id));
   ipcMain.handle("midi:openOut", (_event, id: string) => midiBridge.openOut(id));
   ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => midiBridge.send(payload));

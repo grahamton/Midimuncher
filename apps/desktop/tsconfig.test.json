@@ -4,9 +4,9 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["vite/client"],
+    "types": ["node"],
     "allowImportingTsExtensions": false,
     "baseUrl": "."
   },
-  "include": ["src", "shared"]
+  "include": ["src", "shared", "electron", "tests"]
 }
