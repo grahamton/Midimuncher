@@ -11,6 +11,13 @@ export type MidiPorts = {
   outputs: MidiPortInfo[];
 };
 
+export type MidiBackendInfo = {
+  id: string;
+  label: string;
+  available: boolean;
+  selected: boolean;
+};
+
 export type MidiSendPayload = {
   portId: string;
   msg: MidiMsg;
