@@ -46,6 +46,7 @@
     "target": "node20",
     "shims": false,
     "splitting": false,
+    "noExternal": ["@midi-playground/core"],
     "clean": true
   }
 }
