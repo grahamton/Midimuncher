@@ -39,6 +39,7 @@ export function App() {
   const [clockDiv, setClockDiv] = useState(1);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
+  const [activeView, setActiveView] = useState<"setup" | "routes" | "monitor">("setup");
 
   useEffect(() => {
     if (!midiApi) return;
@@ -246,325 +247,378 @@ export function App() {
           </p>
         </div>
       ) : null}
+
       <header className="hero">
         <div>
           <p className="eyebrow">Midi Muncher</p>
-          <h1>OXI loop test</h1>
-          <p className="lede">Select OXI ports, watch incoming MIDI, and fire a test note/CC.</p>
+          <h1>Performance hub</h1>
+          <p className="lede">Select backend, define devices, route MIDI, and monitor traffic.</p>
         </div>
-        <button className="ghost" onClick={refreshPorts} disabled={loadingPorts}>
-          {loadingPorts ? "Scanning..." : "Refresh devices"}
-        </button>
+        <div className="hero-actions">
+          <button className="ghost" onClick={refreshPorts} disabled={loadingPorts}>
+            {loadingPorts ? "Scanning..." : "Refresh devices"}
+          </button>
+          <nav className="nav">
+            <button className={activeView === "setup" ? "ghost active" : "ghost"} onClick={() => setActiveView("setup")}>
+              Setup
+            </button>
+            <button className={activeView === "routes" ? "ghost active" : "ghost"} onClick={() => setActiveView("routes")}>
+              Routing
+            </button>
+            <button className={activeView === "monitor" ? "ghost active" : "ghost"} onClick={() => setActiveView("monitor")}>
+              Monitor
+            </button>
+          </nav>
+        </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Devices & Backend</h2>
-          <p>Pick backend, set up to 8 devices, and choose defaults.</p>
-        </div>
-        <div className="grid two">
-          <div className="card">
-            <div className="card-head">
-              <h3>MIDI backend</h3>
+      {activeView === "setup" ? (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Devices & Backend</h2>
+              <p>Pick backend, set up to 8 devices, and choose defaults.</p>
             </div>
-            {backends.length === 0 ? (
-              <p className="muted">No backend info yet.</p>
-            ) : (
-              <select
-                value={backends.find((b) => b.selected)?.id ?? ""}
-                onChange={(e) => selectBackend(e.target.value)}
-              >
-                {backends.map((b) => (
-                  <option key={b.id} value={b.id} disabled={!b.available}>
-                    {b.label} {b.available ? "" : "(unavailable)"}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="card">
-            <div className="card-head">
-              <h3>Diagnostics</h3>
+            <div className="grid two">
+              <div className="card">
+                <div className="card-head">
+                  <h3>MIDI backend</h3>
+                </div>
+                {backends.length === 0 ? (
+                  <p className="muted">No backend info yet.</p>
+                ) : (
+                  <select
+                    value={backends.find((b) => b.selected)?.id ?? ""}
+                    onChange={(e) => selectBackend(e.target.value)}
+                  >
+                    {backends.map((b) => (
+                      <option key={b.id} value={b.id} disabled={!b.available}>
+                        {b.label} {b.available ? "" : "(unavailable)"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <h3>Diagnostics</h3>
+                </div>
+                <p className="muted">Sends a test note to the selected output.</p>
+                <button onClick={runDiagnostics} disabled={!selectedOut || diagRunning}>
+                  {diagRunning ? "Testing..." : "Run diagnostics"}
+                </button>
+                {diagMessage ? <p className="muted">{diagMessage}</p> : null}
+              </div>
+              <DeviceSelect
+                title="Input (monitor)"
+                ports={ports.inputs}
+                selectedId={selectedIn}
+                onSelect={setSelectedIn}
+                emptyLabel="No MIDI inputs detected"
+              />
+              <DeviceSelect
+                title="Output (send)"
+                ports={ports.outputs}
+                selectedId={selectedOut}
+                onSelect={setSelectedOut}
+                emptyLabel="No MIDI outputs detected"
+              />
+              <div className="card">
+                <div className="card-head">
+                  <h3>Devices</h3>
+                  <span className="pill">
+                    {devices.length}/{MAX_DEVICES}
+                  </span>
+                </div>
+                {devices.length === 0 ? <p className="muted">Add devices to mirror your rig.</p> : null}
+                <div className="stack">
+                  {devices.map((d) => (
+                    <div key={d.id} className="device-row">
+                      <div className="device-header">
+                        <input
+                          type="text"
+                          value={d.name}
+                          onChange={(e) => updateDevice(d.id, { name: e.target.value })}
+                          aria-label="Device name"
+                        />
+                        <button className="ghost" onClick={() => setSelectedDeviceId(d.id)}>
+                          {selectedDeviceId === d.id ? "Selected" : "Use for routes"}
+                        </button>
+                        <button className="ghost" onClick={() => removeDevice(d.id)}>
+                          Remove
+                        </button>
+                      </div>
+                      <div className="device-grid">
+                        <label className="field">
+                          <span>Input</span>
+                          <select
+                            value={d.inputId ?? ""}
+                            onChange={(e) => updateDevice(d.id, { inputId: e.target.value || null })}
+                          >
+                            <option value="">None</option>
+                            {ports.inputs.map((p) => (
+                              <option key={`${d.id}-in-${p.id}`} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Output</span>
+                          <select
+                            value={d.outputId ?? ""}
+                            onChange={(e) => updateDevice(d.id, { outputId: e.target.value || null })}
+                          >
+                            <option value="">None</option>
+                            {ports.outputs.map((p) => (
+                              <option key={`${d.id}-out-${p.id}`} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Default channel</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={16}
+                            value={d.channel}
+                            onChange={(e) => updateDevice(d.id, { channel: clampChannel(Number(e.target.value)) })}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Clock</span>
+                          <div className="chip">
+                            <input
+                              type="checkbox"
+                              checked={d.clockEnabled}
+                              onChange={(e) => updateDevice(d.id, { clockEnabled: e.target.checked })}
+                            />{" "}
+                            Enable
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={addDevice} disabled={devices.length >= MAX_DEVICES}>
+                  Add device
+                </button>
+              </div>
             </div>
-            <p className="muted">Sends a test note to the selected output.</p>
-            <button onClick={runDiagnostics} disabled={!selectedOut || diagRunning}>
-              {diagRunning ? "Testing..." : "Run diagnostics"}
-            </button>
-            {diagMessage ? <p className="muted">{diagMessage}</p> : null}
-          </div>
-          <DeviceSelect
-            title="Input (monitor)"
-            ports={ports.inputs}
-            selectedId={selectedIn}
-            onSelect={setSelectedIn}
-            emptyLabel="No MIDI inputs detected"
-          />
-          <DeviceSelect
-            title="Output (send)"
-            ports={ports.outputs}
-            selectedId={selectedOut}
-            onSelect={setSelectedOut}
-            emptyLabel="No MIDI outputs detected"
-          />
-          <div className="card">
-            <div className="card-head">
-              <h3>Devices</h3>
-              <span className="pill">
-                {devices.length}/{MAX_DEVICES}
-              </span>
+          </section>
+        </>
+      ) : null}
+
+      {activeView === "routes" ? (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Create route</h2>
+              <p>Forward input to output with optional filters.</p>
             </div>
-            {devices.length === 0 ? <p className="muted">Add devices to mirror your rig.</p> : null}
-            <div className="stack">
-              {devices.map((d, idx) => (
-                <div key={d.id} className="device-row">
-                  <div className="device-header">
+            <div className="grid two">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Channel mode</h3>
+                </div>
+                <label className="field">
+                  <span>Force channel</span>
+                  <div style={{ display: "flex", gap: 8 }}>
                     <input
-                      type="text"
-                      value={d.name}
-                      onChange={(e) => updateDevice(d.id, { name: e.target.value })}
-                      aria-label="Device name"
+                      type="number"
+                      min={1}
+                      max={16}
+                      value={routeChannel}
+                      disabled={!forceChannelEnabled}
+                      onChange={(e) => setRouteChannel(clampChannel(Number(e.target.value)))}
+                      style={{ flex: 1 }}
                     />
-                    <button className="ghost" onClick={() => setSelectedDeviceId(d.id)}>
-                      {selectedDeviceId === d.id ? "Selected" : "Use for routes"}
-                    </button>
-                    <button className="ghost" onClick={() => removeDevice(d.id)}>
-                      Remove
+                    <button className="ghost" onClick={() => setForceChannelEnabled((on) => !on)}>
+                      {forceChannelEnabled ? "Passthrough" : "Force"}
                     </button>
                   </div>
-                  <div className="device-grid">
-                    <label className="field">
-                      <span>Input</span>
-                      <select
-                        value={d.inputId ?? ""}
-                        onChange={(e) => updateDevice(d.id, { inputId: e.target.value || null })}
-                      >
-                        <option value="">None</option>
-                        {ports.inputs.map((p) => (
-                          <option key={`${d.id}-in-${p.id}`} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                </label>
+                <div className="field">
+                  <span>Message types</span>
+                  <div className="chips">
+                    <label className="chip">
+                      <input type="checkbox" checked={allowNotes} onChange={(e) => setAllowNotes(e.target.checked)} /> Notes
                     </label>
-                    <label className="field">
-                      <span>Output</span>
-                      <select
-                        value={d.outputId ?? ""}
-                        onChange={(e) => updateDevice(d.id, { outputId: e.target.value || null })}
-                      >
-                        <option value="">None</option>
-                        {ports.outputs.map((p) => (
-                          <option key={`${d.id}-out-${p.id}`} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                    <label className="chip">
+                      <input type="checkbox" checked={allowCc} onChange={(e) => setAllowCc(e.target.checked)} /> CC
                     </label>
-                    <label className="field">
-                      <span>Default channel</span>
+                    <label className="chip">
                       <input
-                        type="number"
-                        min={1}
-                        max={16}
-                        value={d.channel}
-                        onChange={(e) => updateDevice(d.id, { channel: clampChannel(Number(e.target.value)) })}
-                      />
+                        type="checkbox"
+                        checked={allowExpression}
+                        onChange={(e) => setAllowExpression(e.target.checked)}
+                      />{" "}
+                      Pitch/aftertouch
                     </label>
-                    <label className="field">
-                      <span>Clock</span>
-                      <div className="chip">
-                        <input
-                          type="checkbox"
-                          checked={d.clockEnabled}
-                          onChange={(e) => updateDevice(d.id, { clockEnabled: e.target.checked })}
-                        />{" "}
-                        Enable
-                      </div>
+                    <label className="chip">
+                      <input
+                        type="checkbox"
+                        checked={allowTransport}
+                        onChange={(e) => setAllowTransport(e.target.checked)}
+                      />{" "}
+                      Start/stop
+                    </label>
+                    <label className="chip">
+                      <input type="checkbox" checked={allowClock} onChange={(e) => setAllowClock(e.target.checked)} /> Clock
                     </label>
                   </div>
                 </div>
-              ))}
-            </div>
-            <button onClick={addDevice} disabled={devices.length >= MAX_DEVICES}>
-              Add device
-            </button>
-          </div>
-          <div className="card">
-            <div className="card-head">
-              <h3>Create route</h3>
-              <span className="pill">Patchbay</span>
-            </div>
-            <p className="muted">Forward input to output with optional filters.</p>
-            <label className="field">
-              <span>Force channel</span>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={routeChannel}
-                  disabled={!forceChannelEnabled}
-                  onChange={(e) => setRouteChannel(clampChannel(Number(e.target.value)))}
-                  style={{ flex: 1 }}
-                />
-                <button className="ghost" onClick={() => setForceChannelEnabled((on) => !on)}>
-                  {forceChannelEnabled ? "Passthrough" : "Force"}
+                <label className="field">
+                  <span>Clock thinning (send every Nth clock)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={96}
+                    value={clockDiv}
+                    onChange={(e) => setClockDiv(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                  />
+                </label>
+                <label className="field">
+                  <span>Route using device (optional)</span>
+                  <select value={selectedDeviceId ?? ""} onChange={(e) => setSelectedDeviceId(e.target.value || null)}>
+                    <option value="">None</option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button onClick={addRoute} disabled={!selectedIn && !selectedOut && !selectedDeviceId}>
+                  Add route
                 </button>
               </div>
-            </label>
-            <div className="field">
-              <span>Message types</span>
-              <div className="chips">
-                <label className="chip">
-                  <input type="checkbox" checked={allowNotes} onChange={(e) => setAllowNotes(e.target.checked)} /> Notes
-                </label>
-                <label className="chip">
-                  <input type="checkbox" checked={allowCc} onChange={(e) => setAllowCc(e.target.checked)} /> CC
-                </label>
-                <label className="chip">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Manual ports</h3>
+                </div>
+                <DeviceSelect
+                  title="Input (monitor)"
+                  ports={ports.inputs}
+                  selectedId={selectedIn}
+                  onSelect={setSelectedIn}
+                  emptyLabel="No MIDI inputs detected"
+                />
+                <DeviceSelect
+                  title="Output (send)"
+                  ports={ports.outputs}
+                  selectedId={selectedOut}
+                  onSelect={setSelectedOut}
+                  emptyLabel="No MIDI outputs detected"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Active routes</h2>
+              <p>{routes.length === 0 ? "No routes yet" : `${routes.length} route${routes.length === 1 ? "" : "s"}`}</p>
+            </div>
+            <div className="log">
+              {routes.length === 0 && <p className="muted">Create a route above to start routing.</p>}
+              {routes.map((route) => (
+                <div key={route.id} className="log-row">
+                  <div>
+                    <p className="label">
+                      {portName(route.fromId)} → {portName(route.toId)}
+                    </p>
+                    <p className="muted">
+                      {route.channelMode === "force" && route.forceChannel
+                        ? `Force ch ${route.forceChannel}`
+                        : "Channel passthrough"}
+                      {" · "}
+                      {describeFilter(route.filter)}
+                    </p>
+                  </div>
+                  <button className="ghost" onClick={() => removeRoute(route.id)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Send a ping</h2>
+              <p>Verifies the loop: app → OXI USB → synth chain.</p>
+            </div>
+            <div className="grid two">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Note</h3>
+                  <span className="pill">ch 1</span>
+                </div>
+                <label className="field">
+                  <span>Note (MIDI number)</span>
                   <input
-                    type="checkbox"
-                    checked={allowExpression}
-                    onChange={(e) => setAllowExpression(e.target.checked)}
-                  />{" "}
-                  Pitch/aftertouch
+                    type="number"
+                    value={note}
+                    min={0}
+                    max={127}
+                    onChange={(e) => setNote(Number(e.target.value))}
+                  />
                 </label>
-                <label className="chip">
+                <button onClick={sendTestNote} disabled={!selectedOut}>
+                  Send note on/off
+                </button>
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <h3>CC</h3>
+                  <span className="pill">CC 1</span>
+                </div>
+                <label className="field">
+                  <span>Value</span>
                   <input
-                    type="checkbox"
-                    checked={allowTransport}
-                    onChange={(e) => setAllowTransport(e.target.checked)}
-                  />{" "}
-                  Start/stop
+                    type="range"
+                    min={0}
+                    max={127}
+                    value={ccValue}
+                    onChange={(e) => setCcValue(Number(e.target.value))}
+                  />
+                  <output>{ccValue}</output>
                 </label>
-                <label className="chip">
-                  <input type="checkbox" checked={allowClock} onChange={(e) => setAllowClock(e.target.checked)} /> Clock
-                </label>
+                <button onClick={sendCc} disabled={!selectedOut}>
+                  Send CC
+                </button>
               </div>
             </div>
-            <label className="field">
-              <span>Clock thinning (send every Nth clock)</span>
-              <input
-                type="number"
-                min={1}
-                max={96}
-                value={clockDiv}
-                onChange={(e) => setClockDiv(Math.max(1, Math.round(Number(e.target.value) || 1)))}
-              />
-            </label>
-            <label className="field">
-              <span>Route using device (optional)</span>
-              <select value={selectedDeviceId ?? ""} onChange={(e) => setSelectedDeviceId(e.target.value || null)}>
-                <option value="">None</option>
-                {devices.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button onClick={addRoute} disabled={!selectedIn && !selectedOut && !selectedDeviceId}>
-              Add route
-            </button>
-          </div>
-        </div>
-      </section>
+          </section>
+        </>
+      ) : null}
 
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Active routes</h2>
-          <p>{routes.length === 0 ? "No routes yet" : `${routes.length} route${routes.length === 1 ? "" : "s"}`}</p>
-        </div>
-        <div className="log">
-          {routes.length === 0 && <p className="muted">Create a route above to start routing.</p>}
-          {routes.map((route) => (
-            <div key={route.id} className="log-row">
-              <div>
-                <p className="label">
-                  {portName(route.fromId)} → {portName(route.toId)}
-                </p>
-                <p className="muted">
-                  {route.channelMode === "force" && route.forceChannel
-                    ? `Force ch ${route.forceChannel}`
-                    : "Channel passthrough"}
-                  {" · "}
-                  {describeFilter(route.filter)}
-                </p>
+      {activeView === "monitor" ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Monitor</h2>
+            <p>
+              Backend: {backends.find((b) => b.selected)?.label ?? "Unknown"} · Input: {selectedIn ?? "None"} · Output:{" "}
+              {selectedOut ?? "None"}
+            </p>
+          </div>
+          <div className="log">
+            {activity.length === 0 && <p className="muted">No events yet.</p>}
+            {activity.map((evt) => (
+              <div key={evt._rowId} className="log-row">
+                <div>
+                  <p className="label">{evt.src.name ?? evt.src.id}</p>
+                  <p className="muted">{evt.label}</p>
+                </div>
+                <span className="time">{new Date(evt.ts).toLocaleTimeString()}</span>
               </div>
-              <button className="ghost" onClick={() => removeRoute(route.id)}>
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Send a ping</h2>
-          <p>Verifies the loop: app → OXI USB → synth chain.</p>
-        </div>
-        <div className="grid two">
-          <div className="card">
-            <div className="card-head">
-              <h3>Note</h3>
-              <span className="pill">ch 1</span>
-            </div>
-            <label className="field">
-              <span>Note (MIDI number)</span>
-              <input
-                type="number"
-                value={note}
-                min={0}
-                max={127}
-                onChange={(e) => setNote(Number(e.target.value))}
-              />
-            </label>
-            <button onClick={sendTestNote} disabled={!selectedOut}>
-              Send note on/off
-            </button>
+            ))}
           </div>
-          <div className="card">
-            <div className="card-head">
-              <h3>CC</h3>
-              <span className="pill">CC 1</span>
-            </div>
-            <label className="field">
-              <span>Value</span>
-              <input
-                type="range"
-                min={0}
-                max={127}
-                value={ccValue}
-                onChange={(e) => setCcValue(Number(e.target.value))}
-              />
-              <output>{ccValue}</output>
-            </label>
-            <button onClick={sendCc} disabled={!selectedOut}>
-              Send CC
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Activity</h2>
-          <p>Live MIDI from the selected input.</p>
-        </div>
-        <div className="log">
-          {activity.length === 0 && <p className="muted">No events yet.</p>}
-          {activity.map((evt) => (
-            <div key={evt._rowId} className="log-row">
-              <div>
-                <p className="label">{evt.src.name ?? evt.src.id}</p>
-                <p className="muted">{evt.label}</p>
-              </div>
-              <span className="time">{new Date(evt.ts).toLocaleTimeString()}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }
