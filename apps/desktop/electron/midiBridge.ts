@@ -21,8 +21,8 @@ export class MidiBridge extends EventEmitter {
     this.backend.on("midi", this.handleBackendMidi);
   }
 
-  dispose() {
-    this.backends.forEach((b) => b.dispose());
+  async dispose() {
+    await Promise.all(this.backends.map((b) => b.dispose()));
     this.removeAllListeners();
   }
 
@@ -36,26 +36,26 @@ export class MidiBridge extends EventEmitter {
     return results;
   }
 
-  listPorts(): MidiPorts {
-    const ports = this.backend.listPorts();
+  async listPorts(): Promise<MidiPorts> {
+    const ports = await Promise.resolve(this.backend.listPorts());
     ports.inputs.forEach((p) => this.portNames.set(p.id, p.name));
     ports.outputs.forEach((p) => this.portNames.set(p.id, p.name));
     return ports;
   }
 
-  openIn(id: string): boolean {
-    return this.backend.openIn(id);
+  openIn(id: string): Promise<boolean> {
+    return Promise.resolve(this.backend.openIn(id));
   }
 
-  openOut(id: string): boolean {
-    return this.backend.openOut(id);
+  openOut(id: string): Promise<boolean> {
+    return Promise.resolve(this.backend.openOut(id));
   }
 
-  send(payload: MidiSendPayload): boolean {
+  async send(payload: MidiSendPayload): Promise<boolean> {
     const { portId, msg } = payload;
     const bytes = encodeMidiMessage(msg);
     if (!bytes) return false;
-    const ok = this.backend.send(portId, bytes);
+    const ok = await Promise.resolve(this.backend.send(portId, bytes));
     if (ok) {
       const evt: MidiEvent = {
         ts: Date.now(),
@@ -67,18 +67,20 @@ export class MidiBridge extends EventEmitter {
     return ok;
   }
 
-  setRoutes(routes: RouteConfig[]): boolean {
+  async setRoutes(routes: RouteConfig[]): Promise<boolean> {
     this.activeRoutes = routes ?? [];
     this.clockCounters.clear();
-    this.activeRoutes.forEach((route) => {
-      this.openIn(route.fromId);
-      this.openOut(route.toId);
-    });
+    await Promise.all(
+      this.activeRoutes.map(async (route) => {
+        await this.openIn(route.fromId);
+        await this.openOut(route.toId);
+      })
+    );
     return true;
   }
 
-  closeAll() {
-    this.backend.closeAll();
+  async closeAll() {
+    await Promise.resolve(this.backend.closeAll());
   }
 
   async setBackend(id: BackendId): Promise<boolean> {
@@ -88,15 +90,15 @@ export class MidiBridge extends EventEmitter {
     if (!available) return false;
     if (target === this.backend) return true;
     this.backend.removeListener("midi", this.handleBackendMidi);
-    this.backend.closeAll();
+    await Promise.resolve(this.backend.closeAll());
     this.backend = target;
     this.backend.on("midi", this.handleBackendMidi);
     // Refresh port name cache.
-    this.listPorts();
+    await this.listPorts();
     return true;
   }
 
-  private forwardRoute(evt: MidiEvent) {
+  private async forwardRoute(evt: MidiEvent) {
     if (!this.activeRoutes.length) return;
     const now = Date.now();
     for (const route of this.activeRoutes) {
@@ -110,7 +112,7 @@ export class MidiBridge extends EventEmitter {
         continue;
       }
       this.recentEchoes.set(signature, now);
-      this.send({ portId: route.toId, msg });
+      await this.send({ portId: route.toId, msg });
     }
   }
 
@@ -123,7 +125,7 @@ export class MidiBridge extends EventEmitter {
       msg: midiMsg
     };
     this.emit("midi", evt);
-    this.forwardRoute(evt);
+    void this.forwardRoute(evt).catch((err) => console.warn("Route forward failed", err));
   };
 }
 
