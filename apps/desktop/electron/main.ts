@@ -56,12 +56,12 @@ app.whenReady().then(() => {
   ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => midiBridge.send(payload));
   ipcMain.handle("midi:setRoutes", (_event, routes: RouteConfig[]) => midiBridge.setRoutes(routes));
 
-  ipcMain.handle("mapping:emit", (_event, payload: MappingEmitPayload) => {
+  ipcMain.handle("mapping:emit", async (_event, payload: MappingEmitPayload) => {
     try {
       const sends = computeMappingSends(payload.control, payload.value, payload.devices);
       for (const send of sends) {
-        midiBridge.openOut(send.portId);
-        midiBridge.send({ portId: send.portId, msg: send.msg });
+        await midiBridge.openOut(send.portId);
+        await midiBridge.send({ portId: send.portId, msg: send.msg });
       }
       return true;
     } catch (err) {
@@ -108,13 +108,13 @@ app.on("before-quit", (e) => {
       .flush()
       .catch(() => undefined)
       .finally(() => {
-        midiBridge.closeAll();
+        void midiBridge.closeAll();
         app.exit(0);
       });
     return;
   }
 
-  midiBridge.closeAll();
+  void midiBridge.closeAll();
 });
 
 app.on("window-all-closed", () => {

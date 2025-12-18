@@ -20,14 +20,14 @@ export abstract class MidiBackend extends EventEmitter {
   abstract readonly label: string;
 
   abstract isAvailable(): Promise<boolean> | boolean;
-  abstract listPorts(): MidiPorts;
-  abstract openIn(id: string): boolean;
-  abstract openOut(id: string): boolean;
-  abstract send(portId: string, bytes: number[]): boolean;
-  abstract closeAll(): void;
+  abstract listPorts(): Promise<MidiPorts> | MidiPorts;
+  abstract openIn(id: string): Promise<boolean> | boolean;
+  abstract openOut(id: string): Promise<boolean> | boolean;
+  abstract send(portId: string, bytes: number[]): Promise<boolean> | boolean;
+  abstract closeAll(): Promise<void> | void;
 
-  dispose() {
+  async dispose() {
     this.removeAllListeners();
-    this.closeAll();
+    await Promise.resolve(this.closeAll());
   }
 }

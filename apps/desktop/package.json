@@ -19,6 +19,7 @@
     "lint": "echo desktop lint todo",
     "test": "echo desktop test todo",
     "smoke:midi": "tsx scripts/midi-smoke.ts",
+    "smoke:winrt": "tsx scripts/winrt-smoke.ts",
     "smoke:persist": "tsx scripts/persistence-smoke.ts",
     "smoke:mapping": "tsx scripts/mapping-smoke.ts"
   },
