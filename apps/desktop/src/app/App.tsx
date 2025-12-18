@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import { applyCurve01, defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { MidiEvent, MidiMsg } from "@midi-playground/core";
 import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
 
@@ -16,6 +16,28 @@ type Device = {
   outputId: string | null;
   channel: number;
   clockEnabled: boolean;
+};
+
+type Curve = "linear" | "expo" | "log";
+type Slot =
+  | {
+      enabled: boolean;
+      kind: "cc";
+      cc: number;
+      min: number;
+      max: number;
+      curve: Curve;
+      targetDeviceId: string | null;
+      channel?: number;
+    }
+  | { enabled: boolean; kind: "empty" };
+
+type Control = {
+  id: string;
+  type: "knob" | "fader" | "button";
+  label: string;
+  value: number;
+  slots: Slot[];
 };
 
 export function App() {
@@ -41,7 +63,14 @@ export function App() {
   const [clockDiv, setClockDiv] = useState(1);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
-  const [activeView, setActiveView] = useState<"setup" | "routes" | "monitor">("setup");
+  const [activeView, setActiveView] = useState<"setup" | "routes" | "mapping" | "monitor">("setup");
+  const [controls, setControls] = useState<Control[]>(() => [
+    { id: "knob-1", type: "knob", label: "Knob 1", value: 0, slots: defaultSlots() as Slot[] },
+    { id: "knob-2", type: "knob", label: "Knob 2", value: 0, slots: defaultSlots() as Slot[] },
+    { id: "fader-1", type: "fader", label: "Fader 1", value: 0, slots: defaultSlots() as Slot[] },
+    { id: "button-1", type: "button", label: "Button 1", value: 0, slots: defaultSlots() as Slot[] }
+  ]);
+  const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
 
   useEffect(() => {
     if (!midiApi) return;
@@ -244,6 +273,45 @@ export function App() {
     setLog([]);
   }
 
+  const selectedControl = controls.find((c) => c.id === selectedControlId) ?? controls[0];
+
+  function updateControl(id: string, partial: Partial<Control>) {
+    setControls((current) => current.map((c) => (c.id === id ? { ...c, ...partial } : c)));
+  }
+
+  function updateSlot(controlId: string, slotIndex: number, partial: Partial<Extract<Slot, { kind: "cc" }> | Slot>) {
+    setControls((current) =>
+      current.map((c) => {
+        if (c.id !== controlId) return c;
+        const slots = [...c.slots];
+        const existing = slots[slotIndex];
+        if (!existing) return c;
+        slots[slotIndex] = { ...(existing as any), ...(partial as any) } as Slot;
+        return { ...c, slots };
+      })
+    );
+  }
+
+  async function emitControl(control: Control, rawValue: number) {
+    if (!midiApi) return;
+    const value01 = rawValue / 127;
+    for (const slot of control.slots) {
+      if (!slot.enabled || slot.kind !== "cc") continue;
+      if (!slot.targetDeviceId) continue;
+      const target = devices.find((d) => d.id === slot.targetDeviceId);
+      if (!target?.outputId) continue;
+      const channel = clampChannel(slot.channel ?? target.channel);
+      const shaped01 = applyCurve01(value01, slot.curve);
+      const min = clampMidi(slot.min);
+      const max = clampMidi(slot.max);
+      const mapped = Math.round(min + shaped01 * (max - min));
+      await midiApi.send({
+        portId: target.outputId,
+        msg: { t: "cc", ch: channel, cc: clampMidi(slot.cc), val: clampMidi(mapped) }
+      });
+    }
+  }
+
   return (
     <div className="page">
       {!midiApi ? (
@@ -272,6 +340,12 @@ export function App() {
             </button>
             <button className={activeView === "routes" ? "ghost active" : "ghost"} onClick={() => setActiveView("routes")}>
               Routing
+            </button>
+            <button
+              className={activeView === "mapping" ? "ghost active" : "ghost"}
+              onClick={() => setActiveView("mapping")}
+            >
+              Mapping
             </button>
             <button className={activeView === "monitor" ? "ghost active" : "ghost"} onClick={() => setActiveView("monitor")}>
               Monitor
@@ -668,6 +742,201 @@ export function App() {
           </div>
         </section>
       ) : null}
+
+      {activeView === "mapping" ? (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Mapping</h2>
+              <p>Virtual controls with up to 8 CC slots each (per-slot curve, min/max, and device target).</p>
+            </div>
+            <div className="mapping-grid">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Controls</h3>
+                </div>
+                <div className="stack">
+                  {controls.map((c) => (
+                    <button
+                      key={c.id}
+                      className={c.id === selectedControlId ? "ghost active" : "ghost"}
+                      onClick={() => setSelectedControlId(c.id)}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                {selectedControl ? (
+                  <div className="field">
+                    <span>Value</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={127}
+                      value={selectedControl.value}
+                      onChange={(e) => {
+                        const next = clampMidi(Number(e.target.value));
+                        updateControl(selectedControl.id, { value: next });
+                        void emitControl(selectedControl, next);
+                      }}
+                    />
+                    <output>{selectedControl.value}</output>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <h3>Slot editor</h3>
+                  <span className="pill">8 slots</span>
+                </div>
+                {!selectedControl ? (
+                  <p className="muted">Select a control.</p>
+                ) : (
+                  <div className="stack">
+                    {selectedControl.slots.map((slot, idx) => (
+                      <div key={`${selectedControl.id}-slot-${idx}`} className="slot-row">
+                        <div className="slot-head">
+                          <span className="pill">Slot {idx + 1}</span>
+                          <label className="chip">
+                            <input
+                              type="checkbox"
+                              checked={slot.enabled}
+                              onChange={(e) => updateSlot(selectedControl.id, idx, { enabled: e.target.checked })}
+                            />{" "}
+                            Enabled
+                          </label>
+                          <select
+                            value={slot.kind}
+                            onChange={(e) => {
+                              const kind = e.target.value as "empty" | "cc";
+                              if (kind === "empty") {
+                                updateSlot(selectedControl.id, idx, { kind: "empty", enabled: false });
+                              } else {
+                                updateSlot(selectedControl.id, idx, {
+                                  kind: "cc",
+                                  enabled: true,
+                                  cc: 74,
+                                  min: 0,
+                                  max: 127,
+                                  curve: "linear",
+                                  targetDeviceId: devices[0]?.id ?? null
+                                });
+                              }
+                            }}
+                          >
+                            <option value="empty">Empty</option>
+                            <option value="cc">CC</option>
+                          </select>
+                        </div>
+
+                        {slot.kind === "cc" ? (
+                          <div className="slot-grid">
+                            <label className="field">
+                              <span>Target device</span>
+                              <select
+                                value={slot.targetDeviceId ?? ""}
+                                onChange={(e) =>
+                                  updateSlot(selectedControl.id, idx, { targetDeviceId: e.target.value || null })
+                                }
+                              >
+                                <option value="">None</option>
+                                {devices.map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="field">
+                              <span>CC</span>
+                              <select
+                                value={String(slot.cc)}
+                                onChange={(e) => updateSlot(selectedControl.id, idx, { cc: Number(e.target.value) })}
+                              >
+                                {(() => {
+                                  const dev = devices.find((d) => d.id === slot.targetDeviceId);
+                                  const profile = getInstrumentProfile(dev?.instrumentId);
+                                  if (!profile) {
+                                    return (
+                                      <>
+                                        <option value="74">CC 74 (filter cutoff)</option>
+                                        <option value="1">CC 1 (mod)</option>
+                                        <option value="7">CC 7 (volume)</option>
+                                      </>
+                                    );
+                                  }
+                                  return profile.cc.map((c) => (
+                                    <option key={`${profile.id}-${c.cc}`} value={c.cc}>
+                                      CC {c.cc} · {c.label}
+                                    </option>
+                                  ));
+                                })()}
+                              </select>
+                            </label>
+
+                            <label className="field">
+                              <span>Channel (optional)</span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={16}
+                                value={slot.channel ?? ""}
+                                placeholder="device"
+                                onChange={(e) =>
+                                  updateSlot(selectedControl.id, idx, {
+                                    channel: e.target.value === "" ? undefined : clampChannel(Number(e.target.value))
+                                  })
+                                }
+                              />
+                            </label>
+
+                            <label className="field">
+                              <span>Curve</span>
+                              <select
+                                value={slot.curve}
+                                onChange={(e) => updateSlot(selectedControl.id, idx, { curve: e.target.value as Curve })}
+                              >
+                                <option value="linear">Linear</option>
+                                <option value="expo">Expo</option>
+                                <option value="log">Log</option>
+                              </select>
+                            </label>
+
+                            <label className="field">
+                              <span>Min</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={127}
+                                value={slot.min}
+                                onChange={(e) => updateSlot(selectedControl.id, idx, { min: clampMidi(Number(e.target.value)) })}
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Max</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={127}
+                                value={slot.max}
+                                onChange={(e) => updateSlot(selectedControl.id, idx, { max: clampMidi(Number(e.target.value)) })}
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <p className="muted">No mapping.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -729,6 +998,11 @@ function describeMsg(msg: MidiMsg): string {
 function clampChannel(channel: number) {
   if (Number.isNaN(channel)) return 1;
   return Math.min(Math.max(Math.round(channel), 1), 16);
+}
+
+function clampMidi(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.round(value), 0), 127);
 }
 
 function describeFilter(filter?: RouteFilter): string {
