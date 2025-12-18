@@ -55,7 +55,16 @@ export class MidiBridge extends EventEmitter {
     const { portId, msg } = payload;
     const bytes = encodeMidiMessage(msg);
     if (!bytes) return false;
-    return this.backend.send(portId, bytes);
+    const ok = this.backend.send(portId, bytes);
+    if (ok) {
+      const evt: MidiEvent = {
+        ts: Date.now(),
+        src: { id: `out:${portId}`, name: `OUT → ${this.portNames.get(portId) ?? portId}`, kind: "virtual" },
+        msg
+      };
+      this.emit("midi", evt);
+    }
+    return ok;
   }
 
   setRoutes(routes: RouteConfig[]): boolean {
@@ -132,6 +141,8 @@ function decodeMidiMessage(message: number[]): MidiMsg | null {
       return { t: "noteOn", ch: channel, note: data1, vel: data2 };
     case 0xb0:
       return { t: "cc", ch: channel, cc: data1, val: data2 };
+    case 0xc0:
+      return { t: "programChange", ch: channel, program: data1 };
     case 0xe0: {
       const value = (data2 << 7) | data1;
       return { t: "pitchBend", ch: channel, val: value - 8192 };
@@ -169,6 +180,10 @@ function encodeMidiMessage(msg: MidiMsg): number[] | null {
     case "cc": {
       const channel = clampChannel(msg.ch);
       return [0xb0 | channel, clampData(msg.cc), clampData(msg.val)];
+    }
+    case "programChange": {
+      const channel = clampChannel(msg.ch);
+      return [0xc0 | channel, clampData(msg.program)];
     }
     case "pitchBend": {
       const channel = clampChannel(msg.ch);

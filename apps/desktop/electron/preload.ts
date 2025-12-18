@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { MidiEvent } from "@midi-playground/core";
-import type { MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type { MappingEmitPayload, MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type { ProjectDocV1, ProjectStateV1 } from "../shared/projectTypes";
 
 const midiApi = {
   listPorts: (): Promise<MidiPorts> => ipcRenderer.invoke("midi:listPorts"),
@@ -9,7 +10,11 @@ const midiApi = {
   openIn: (id: string): Promise<boolean> => ipcRenderer.invoke("midi:openIn", id),
   openOut: (id: string): Promise<boolean> => ipcRenderer.invoke("midi:openOut", id),
   send: (payload: MidiSendPayload): Promise<boolean> => ipcRenderer.invoke("midi:send", payload),
+  emitMapping: (payload: MappingEmitPayload): Promise<boolean> => ipcRenderer.invoke("mapping:emit", payload),
   setRoutes: (routes: RouteConfig[]): Promise<boolean> => ipcRenderer.invoke("midi:setRoutes", routes),
+  loadProject: (): Promise<ProjectDocV1 | null> => ipcRenderer.invoke("project:load"),
+  setProjectState: (state: ProjectStateV1): Promise<boolean> => ipcRenderer.invoke("project:setState", state),
+  flushProject: (): Promise<boolean> => ipcRenderer.invoke("project:flush"),
   onEvent: (listener: (evt: MidiEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, data: MidiEvent) => listener(data);
     ipcRenderer.on("midi:event", handler);

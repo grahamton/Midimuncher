@@ -1,5 +1,6 @@
 import type { MidiEvent } from "@midi-playground/core";
-import type { MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../../shared/ipcTypes";
+import type { MappingEmitPayload, MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../../shared/ipcTypes";
+import type { ProjectDocV1, ProjectStateV1 } from "../../shared/projectTypes";
 
 export type MidiApi = {
   listPorts: () => Promise<MidiPorts>;
@@ -8,7 +9,11 @@ export type MidiApi = {
   openIn: (id: string) => Promise<boolean>;
   openOut: (id: string) => Promise<boolean>;
   send: (payload: MidiSendPayload) => Promise<boolean>;
+  emitMapping: (payload: MappingEmitPayload) => Promise<boolean>;
   setRoutes: (routes: RouteConfig[]) => Promise<boolean>;
+  loadProject: () => Promise<ProjectDocV1 | null>;
+  setProjectState: (state: ProjectStateV1) => Promise<boolean>;
+  flushProject: () => Promise<boolean>;
   onEvent: (listener: (evt: MidiEvent) => void) => () => void;
 };
 

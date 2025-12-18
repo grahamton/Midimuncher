@@ -32,3 +32,7 @@ Troubleshooting reminders
 ## Curated CC sets
 
 These are defined in `packages/core/src/instruments/registry.ts` and used by the Mapping UI.
+
+Mapping notes
+- Mapping v1 supports CC, Program Change, and Note slots.
+- MIDI Learn currently targets CC messages (move a knob/fader that sends CC on the selected input).

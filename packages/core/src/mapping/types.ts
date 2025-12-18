@@ -13,6 +13,23 @@ export type MappingSlot =
     }
   | {
       enabled: boolean;
+      kind: "pc";
+      channel?: number;
+      min: number;
+      max: number;
+      curve: Curve;
+      targetDeviceId: string | null;
+    }
+  | {
+      enabled: boolean;
+      kind: "note";
+      note: number;
+      channel?: number;
+      vel: number;
+      targetDeviceId: string | null;
+    }
+  | {
+      enabled: boolean;
       kind: "empty";
     };
 

@@ -8,16 +8,16 @@ Goal: Build a snapshot-driven performance controller in software, using the OXI 
   - Backend abstraction + WinMM provider; stub Windows MIDI Services provider.
   - Backend selector UI and basic diagnostics (send test note).
 
-- **Phase 1 · Device graph + routing (mostly done)**
+- **Phase 1 · Device graph + routing (done)**
   - Device model (max 8) with port binding, default channel, clock flag, and instrument selection.
   - Routing patchbay with filters, channel force/passthrough, clock thinning, loop guard, and device-aware route creation.
   - Monitor view with backend/port context, log cap indicator, and clear control.
-  - Remaining: persistence of devices/routes, optional “merge” controls, clearer OXI port labeling.
+  - Optional: “merge” controls.
 
-- **Phase 2 · Mapping engine v1 (in progress)**
+- **Phase 2 · Mapping engine v1 (done)**
   - Virtual controls with 8 CC slots each (per-slot curve, min/max, optional channel override, device target).
   - Curated CC presets pulled from the instrument registry for quick slot selection.
-  - Remaining: MIDI Learn, non-CC messages (NRPN/note/PC), button semantics (toggle/momentary), save/load.
+  - Includes: MIDI Learn, program change + note mapping, button semantics (toggle/momentary), save/load.
 
 - **Phase 3 · Snapshots, Jump, Commit**
   - Snapshot = per-device CC state + optional one-shots; stores BPM and metadata.

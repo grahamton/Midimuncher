@@ -4,6 +4,7 @@ export type MidiMsg =
   | { t: "noteOn"; ch: number; note: number; vel: number }
   | { t: "noteOff"; ch: number; note: number; vel?: number }
   | { t: "cc"; ch: number; cc: number; val: number }
+  | { t: "programChange"; ch: number; program: number }
   | { t: "pitchBend"; ch: number; val: number }
   | { t: "aftertouch"; ch: number; val: number }
   | { t: "clock" }

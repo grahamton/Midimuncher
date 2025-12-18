@@ -1,14 +1,19 @@
 import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
+import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
-import type { MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type { MappingEmitPayload, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type { ProjectStateV1 } from "../shared/projectTypes";
 import { MidiBridge } from "./midiBridge";
+import { ProjectStore } from "./projectStore";
 
 const midiBridge = new MidiBridge();
+let projectStore: ProjectStore | null = null;
 const isDev = !app.isPackaged;
 const appDir = __dirname;
 
 let mainWindow: BrowserWindow | null = null;
+let quitting = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -40,6 +45,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   app.setAppUserModelId("com.midimuncher.desktop");
+  projectStore = new ProjectStore({ dir: app.getPath("userData") });
   createWindow();
 
   ipcMain.handle("midi:listPorts", () => midiBridge.listPorts());
@@ -49,6 +55,35 @@ app.whenReady().then(() => {
   ipcMain.handle("midi:openOut", (_event, id: string) => midiBridge.openOut(id));
   ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => midiBridge.send(payload));
   ipcMain.handle("midi:setRoutes", (_event, routes: RouteConfig[]) => midiBridge.setRoutes(routes));
+
+  ipcMain.handle("mapping:emit", (_event, payload: MappingEmitPayload) => {
+    try {
+      const sends = computeMappingSends(payload.control, payload.value, payload.devices);
+      for (const send of sends) {
+        midiBridge.openOut(send.portId);
+        midiBridge.send({ portId: send.portId, msg: send.msg });
+      }
+      return true;
+    } catch (err) {
+      console.error("mapping:emit failed", err);
+      return false;
+    }
+  });
+
+  ipcMain.handle("project:load", async () => {
+    if (!projectStore) return null;
+    return projectStore.load();
+  });
+  ipcMain.handle("project:setState", (_event, state: ProjectStateV1) => {
+    if (!projectStore) return false;
+    projectStore.setState(state);
+    return true;
+  });
+  ipcMain.handle("project:flush", async () => {
+    if (!projectStore) return false;
+    await projectStore.flush();
+    return true;
+  });
 
   midiBridge.on("midi", (evt: MidiEvent) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -63,7 +98,22 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (e) => {
+  if (quitting) return;
+  quitting = true;
+
+  if (projectStore) {
+    e.preventDefault();
+    void projectStore
+      .flush()
+      .catch(() => undefined)
+      .finally(() => {
+        midiBridge.closeAll();
+        app.exit(0);
+      });
+    return;
+  }
+
   midiBridge.closeAll();
 });
 

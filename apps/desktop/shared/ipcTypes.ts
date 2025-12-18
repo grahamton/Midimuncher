@@ -1,4 +1,4 @@
-import type { MidiMsg } from "@midi-playground/core";
+import type { ControlElement, MidiMsg } from "@midi-playground/core";
 
 export type MidiPortInfo = {
   id: string;
@@ -21,6 +21,16 @@ export type MidiBackendInfo = {
 export type MidiSendPayload = {
   portId: string;
   msg: MidiMsg;
+};
+
+export type MappingEmitPayload = {
+  control: ControlElement;
+  value: number;
+  devices: Array<{
+    id: string;
+    outputId: string | null;
+    channel: number;
+  }>;
 };
 
 export type RouteFilter = {
