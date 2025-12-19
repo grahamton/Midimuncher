@@ -15,7 +15,16 @@ export type DeviceConfig = {
   clockEnabled: boolean;
 };
 
-export type AppView = "setup" | "routes" | "mapping" | "monitor" | "help" | "snapshots" | "chains" | "settings";
+export type AppView =
+  | "setup"
+  | "routes"
+  | "mapping"
+  | "monitor"
+  | "help"
+  | "snapshots"
+  | "chains"
+  | "settings"
+  | "surfaces";
 
 export type ProjectStateV1 = {
   backendId: string | null;
@@ -167,7 +176,8 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
     view === "help" ||
     view === "snapshots" ||
     view === "chains" ||
-    view === "settings"
+    view === "settings" ||
+    view === "surfaces"
       ? view
       : "snapshots";
 

@@ -16,17 +16,19 @@ This is a quick-start guide for the desktop app as it exists today. It assumes y
   - **Send CC / Send PC**: verify control/program changes; you can set CC number/value.
 
 ## 2) Mapping (Mapping tab)
-- Select a control from the list to edit its slots.
+- Select a control from the list to edit its slots. Each slot has an enable toggle, target device picker, and curve/min/max.
 - **Learn** captures the next incoming CC/Note for that slot; **Cancel** stops listening.
-- You can still type channel/CC/value ranges manually if you prefer.
-- Use the quick buttons on the right to send test Note/CC with the current values.
+- You can still type channel/CC/value ranges manually. Macro multi-bind will assign multiple CCs in one click.
+- Assignment wizard (stub): pick CCs from the instrument list, set curve/range/start slot/device/color, and bind selected in one pass.
+- Quick actions: live send nudges (+/-) emit mapped output; test Note/CC buttons fire the current values.
 
 ## 3) Snapshots (Snapshots tab)
-- Tiles: click to trigger; the active tile is labeled; pending shows a badge when quantized.
+- Pads: click to trigger; the active pad is labeled; pending shows a badge when quantized.
 - Quantize: Immediate, 1 bar, or 4 bars (uses either manual BPM or external clock if “Follow MIDI Clock” is on).
 - Mode: **Jump** (switch immediately at quantize point) or **Commit** (stage then commit).
 - Fade: set milliseconds for level transitions when switching snapshots.
 - **Send Snapshot** (from transport/status) will fire the selected snapshot immediately.
+- Morph (placeholder): crossfade UI between two snapshots; per-parameter morphing will arrive later.
 
 ## 4) Chains (Chains tab)
 - Add steps with **Add Step** or **+ Step**; each step has a snapshot name and bar length.
@@ -50,6 +52,10 @@ This is a quick-start guide for the desktop app as it exists today. It assumes y
 ## 8) Panic & safety
 - Bottom-left **MIDI PANIC** sends all-notes-off (per selected output) to stop hung notes.
 - Safe Mode toggle is visual; future behavior can mute risky actions when enabled.
+
+## 9) Surfaces
+- Surfaces board: mapped faders/knobs/buttons that emit live mapped MIDI; bindings are displayed per control.
+- Surfaces Lab: demos faders/knobs/crossfader/pads/step grid plus a macro multi-bind with per-target curves and rate limiting (hold Shift for fine drag).
 
 ## Tips
 - Prefer `corepack pnpm ...` to ensure the correct pnpm version.

@@ -41,6 +41,8 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
+import { ControlLabPage } from "./ControlLabPage";
+import { SurfaceBoardPage } from "./SurfaceBoardPage";
 import { quantizeToMs } from "./lib/tempo";
 
 const LOG_LIMIT = 100;
@@ -1457,12 +1459,14 @@ export function App() {
             onSendCc={sendCc}
             onQuickTest={(portId, ch) => sendQuickNote(portId, ch, note)}
             onQuickCc={(portId, ch, ccNum, val) => sendQuickCc(portId, ch, ccNum, val)}
-            onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
-            onSendSnapshot={sendSnapshotNow}
-            onAddDeviceRoutes={addDeviceRoutes}
-            snapshots={snapshots}
-            activeSnapshot={activeSnapshot}
-            onSelectSnapshot={triggerSnapshot}
+          onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
+          onSendSnapshot={sendSnapshotNow}
+          onAddDeviceRoutes={addDeviceRoutes}
+          updateControl={updateControl}
+          onEmitControl={emitControl}
+          snapshots={snapshots}
+          activeSnapshot={activeSnapshot}
+          onSelectSnapshot={triggerSnapshot}
             pendingSnapshot={pendingSnapshot}
             snapshotQuantize={snapshotQuantize}
             snapshotMode={snapshotMode}
@@ -1771,6 +1775,7 @@ function LeftNavRail({
   const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
     { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
+    { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
     { id: "chains", label: "Chains", icon: <LinkIcon size={18} /> },
     { id: "monitor", label: "Monitor", icon: <Activity size={18} /> },
@@ -1835,6 +1840,8 @@ function MainContentArea(props: {
   onQuickProgram: (portId: string | null, channel: number, program: number) => void;
   onSendSnapshot: () => void;
   onAddDeviceRoutes: () => void;
+  updateControl?: (id: string, partial: Partial<ControlElement>) => void;
+  onEmitControl?: (control: ControlElement, rawValue: number) => void;
   snapshots: string[];
   activeSnapshot: string | null;
   onSelectSnapshot: (name: string) => void;
@@ -1862,6 +1869,8 @@ function MainContentArea(props: {
   selectedControlId: string | null;
   setSelectedControlId: (id: string) => void;
   updateSlot: (controlId: string, slotIndex: number, partial: Partial<MappingSlot>) => void;
+  updateControl?: (id: string, partial: Partial<ControlElement>) => void;
+  onEmitControl?: (control: ControlElement, rawValue: number) => void;
   learnStatus: "idle" | "listening" | "captured" | "timeout";
   onLearn: (slotIndex: number) => void;
   onCancelLearn: () => void;
@@ -1908,6 +1917,8 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           selectedControlId={rest.selectedControlId}
           setSelectedControlId={rest.setSelectedControlId}
           updateSlot={rest.updateSlot}
+          updateControl={updateControl}
+          onEmitControl={emitControl}
           learnStatus={rest.learnStatus}
           onLearn={rest.onLearn}
           onCancelLearn={rest.onCancelLearn}
@@ -1950,6 +1961,14 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
       );
     case "monitor":
       return <MonitorPage monitorRows={rest.monitorRows} logCapReached={rest.logCapReached} clearLog={rest.clearLog} />;
+    case "surfaces":
+      return (
+        <SurfaceBoardPage
+          controls={rest.controls}
+          onUpdateControl={(id, partial) => rest.updateControl?.(id, partial)}
+          onEmitControl={(control, raw) => rest.onEmitControl?.(control, raw)}
+        />
+      );
     case "settings":
       return (
         <SettingsPage
@@ -2192,6 +2211,138 @@ function SetupPage({
           </button>
         </Panel>
       </div>
+      <Panel title="Assignment wizard (stub)">
+        <p style={styles.muted}>
+          Multi-bind flow with instrument-aware picker and color tags. Select parameters and bind them to a macro or pad in one
+          pass.
+        </p>
+        <button style={styles.btnPrimary} onClick={() => setShowWizard(true)} disabled={!targetProfile}>
+          Open wizard
+        </button>
+        {showWizard && targetProfile ? (
+          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 8 }}>
+            {targetProfile.cc.slice(0, 6).map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: `2px solid ${wizardSelected.includes(c.cc) ? wizardColor : "#1f2937"}`,
+                  background: wizardSelected.includes(c.cc) ? `${wizardColor}22` : "#0b1220",
+                  color: "#e2e8f0"
+                }}
+                onClick={() =>
+                  setWizardSelected((prev) =>
+                    prev.includes(c.cc) ? prev.filter((id) => id !== c.cc) : [...prev, c.cc]
+                  )
+                }
+              >
+                <div style={{ fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{c.label}</span>
+                  <span style={{ color: wizardSelected.includes(c.cc) ? "#38bdf8" : "#94a3b8", fontSize: 12 }}>
+                    CC {c.cc}
+                  </span>
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
+                  Tap to {wizardSelected.includes(c.cc) ? "remove" : "select"}
+                </div>
+              </div>
+            ))}
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={styles.muted}>Curve</span>
+              <select style={styles.select} value={wizardCurve} onChange={(e) => setWizardCurve(e.target.value as Curve)}>
+                <option value="linear">Linear</option>
+                <option value="expo">Expo</option>
+                <option value="log">Log</option>
+              </select>
+              <span style={styles.muted}>Min</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={wizardMin}
+                onChange={(e) => setWizardMin(clampMidi(Number(e.target.value) || 0))}
+              />
+              <span style={styles.muted}>Max</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={wizardMax}
+                onChange={(e) => setWizardMax(clampMidi(Number(e.target.value) || 0))}
+              />
+              <span style={styles.muted}>Start slot</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={1}
+                max={8}
+                value={wizardStartSlot + 1}
+                onChange={(e) => setWizardStartSlot(Math.max(0, Math.min(7, Number(e.target.value) - 1 || 0)))}
+              />
+              <span style={styles.muted}>Device</span>
+              <select
+                style={styles.select}
+                value={wizardDeviceId ?? ""}
+                onChange={(e) => setWizardDeviceId(e.target.value || null)}
+              >
+                <option value="">No target</option>
+                {devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name || d.id}
+                  </option>
+                ))}
+              </select>
+              <span style={styles.muted}>Color</span>
+              <input
+                type="color"
+                value={wizardColor}
+                onChange={(e) => setWizardColor(e.target.value)}
+                style={{ width: 40, height: 30, border: "1px solid #1f2937", borderRadius: 6, background: "#0b1220" }}
+              />
+              <button
+                style={styles.btnPrimary}
+                disabled={!selectedControl || wizardSelected.length === 0}
+                onClick={() => {
+                  if (!selectedControl) return;
+                  const start = wizardStartSlot;
+                  wizardSelected.forEach((ccVal, i) => {
+                    const slotIndex = start + i;
+                    if (slotIndex >= selectedControl.slots.length) return;
+                    updateSlot(selectedControl.id, slotIndex, {
+                      enabled: true,
+                      kind: "cc",
+                      cc: clampMidi(ccVal),
+                      min: wizardMin,
+                      max: wizardMax,
+                      curve: wizardCurve,
+                      targetDeviceId: wizardDeviceId
+                    });
+                  });
+                }}
+              >
+                Bind selected ({wizardSelected.length})
+              </button>
+              <button
+                style={styles.btnSecondary}
+                onClick={() => {
+                  setWizardSelected([]);
+                  setWizardColor("#38bdf8");
+                  setWizardCurve("linear");
+                  setWizardMin(0);
+                  setWizardMax(127);
+                  setWizardStartSlot(0);
+                  setWizardDeviceId(targetDevice?.id ?? null);
+                }}
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Panel>
     </Page>
   );
 }
@@ -2202,6 +2353,8 @@ function MappingPage({
   selectedControlId,
   setSelectedControlId,
   updateSlot,
+  updateControl,
+  onEmitControl,
   learnStatus,
   onLearn,
   onCancelLearn,
@@ -2216,6 +2369,8 @@ function MappingPage({
   selectedControlId: string | null;
   setSelectedControlId: (id: string) => void;
   updateSlot: (controlId: string, slotIndex: number, partial: Partial<MappingSlot>) => void;
+  updateControl?: (id: string, partial: Partial<ControlElement>) => void;
+  onEmitControl?: (control: ControlElement, rawValue: number) => void;
   learnStatus: "idle" | "listening" | "captured" | "timeout";
   onLearn: (slotIndex: number) => void;
   onCancelLearn: () => void;
@@ -2227,6 +2382,19 @@ function MappingPage({
 }) {
   const targetDevice = devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ?? devices[0];
   const targetProfile = targetDevice ? getInstrumentProfile(targetDevice.instrumentId) : null;
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardSelected, setWizardSelected] = useState<number[]>([]);
+  const [wizardCurve, setWizardCurve] = useState<Curve>("linear");
+  const [wizardMin, setWizardMin] = useState(0);
+  const [wizardMax, setWizardMax] = useState(127);
+  const [wizardStartSlot, setWizardStartSlot] = useState(0);
+  const [wizardDeviceId, setWizardDeviceId] = useState<string | null>(targetDevice?.id ?? null);
+  const [wizardColor, setWizardColor] = useState("#38bdf8");
+  const macroTargets = [
+    { label: "Filter", cc: targetProfile?.cc[0]?.cc ?? 74, min: 0, max: 127, curve: "linear" as Curve },
+    { label: "Resonance", cc: targetProfile?.cc[1]?.cc ?? 71, min: 0, max: 110, curve: "expo" as Curve },
+    { label: "Env Amt", cc: targetProfile?.cc[2]?.cc ?? 79, min: 10, max: 120, curve: "log" as Curve }
+  ];
 
   function applyPreset(ccNumber: number, slotIndex = 0) {
     if (!selectedControl) return;
@@ -2237,6 +2405,32 @@ function MappingPage({
       targetDeviceId: targetDevice?.id ?? null,
       channel: clampChannel(targetDevice?.channel ?? 1)
     });
+  }
+
+  function applyMacroMultiBind() {
+    if (!selectedControl) return;
+    macroTargets.slice(0, selectedControl.slots.length).forEach((t, idx) => {
+      updateSlot(selectedControl.id, idx, {
+        enabled: true,
+        kind: "cc",
+        cc: clampMidi(t.cc),
+        min: t.min,
+        max: t.max,
+        curve: t.curve,
+        targetDeviceId: targetDevice?.id ?? null,
+        channel: clampChannel(targetDevice?.channel ?? 1)
+      });
+    });
+    if (updateControl) {
+      updateControl(selectedControl.id, { label: `${selectedControl.label} (macro x${macroTargets.length})` });
+    }
+  }
+
+  function nudgeControl(next: number) {
+    if (!selectedControl || !onEmitControl || !updateControl) return;
+    const clamped = clampMidi(next);
+    updateControl(selectedControl.id, { value: clamped });
+    onEmitControl({ ...selectedControl, value: clamped }, clamped);
   }
 
   return (
@@ -2299,20 +2493,163 @@ function MappingPage({
                   Quick-assign {targetProfile.cc[0]?.label ?? "Cutoff"}
                 </button>
               ) : null}
+              <button style={styles.btnSecondary} onClick={applyMacroMultiBind} disabled={!selectedControl}>
+                Macro bind 3 targets
+              </button>
+              <button
+                style={styles.btnSecondary}
+                disabled={!selectedControl}
+                onClick={() => {
+                  if (!selectedControl) return;
+                  selectedControl.slots.forEach((_, idx) =>
+                    updateSlot(selectedControl.id, idx, { enabled: false, kind: "empty" })
+                  );
+                }}
+              >
+                Clear slots
+              </button>
               <button style={styles.btnSecondary}>Add Target Slot</button>
             </div>
           }
         >
-          <div style={styles.table}>
-            {(selectedControl ? selectedControl.slots.slice(0, 3) : []).map((slot, idx) => (
-              <div key={idx} style={styles.tableRow}>
-                <span style={styles.cellSmall}>S{idx + 1}</span>
-                <span style={styles.valueText}>{slot.kind.toUpperCase()}</span>
-                <span style={styles.muted}>{slot.kind === "cc" ? `CC ${slot.cc ?? "?"}` : slot.kind}</span>
-                <input style={styles.inputNarrow} defaultValue={slot.min ?? 0} />
-                <input style={styles.inputNarrow} defaultValue={slot.max ?? 127} />
-              </div>
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(selectedControl ? selectedControl.slots : []).map((slot, idx) => {
+              const deviceName =
+                devices.find((d) => d.id === slot.targetDeviceId)?.name ??
+                (slot.targetDeviceId ? `Device ${slot.targetDeviceId}` : "No target");
+              const isCc = slot.kind === "cc";
+              const isPc = slot.kind === "pc";
+              const isNote = slot.kind === "note";
+              return (
+                <div key={idx} style={styles.tableRow}>
+                  <span style={styles.cellSmall}>S{idx + 1}</span>
+                  <select
+                    style={styles.select}
+                    value={slot.kind}
+                    onChange={(e) =>
+                      updateSlot(selectedControl!.id, idx, {
+                        kind: e.target.value as MappingSlot["kind"],
+                        enabled: e.target.value !== "empty"
+                      })
+                    }
+                  >
+                    <option value="empty">Empty</option>
+                    <option value="cc">CC</option>
+                    <option value="pc">Program</option>
+                    <option value="note">Note</option>
+                  </select>
+                  <label style={{ ...styles.toggleRow, marginLeft: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={slot.enabled}
+                      onChange={(e) => updateSlot(selectedControl!.id, idx, { enabled: e.target.checked })}
+                    />
+                    <span style={styles.muted}>On</span>
+                  </label>
+                  {isCc ? (
+                    <>
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.cc ?? 0}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { cc: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                      <select
+                        style={styles.select}
+                        value={slot.curve ?? "linear"}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { curve: e.target.value as Curve })}
+                      >
+                        <option value="linear">Linear</option>
+                        <option value="expo">Expo</option>
+                        <option value="log">Log</option>
+                      </select>
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.min ?? 0}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { min: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.max ?? 127}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { max: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                    </>
+                  ) : isPc ? (
+                    <>
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.min ?? 0}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { min: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.max ?? 127}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { max: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                      <select
+                        style={styles.select}
+                        value={slot.curve ?? "linear"}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { curve: e.target.value as Curve })}
+                      >
+                        <option value="linear">Linear</option>
+                        <option value="expo">Expo</option>
+                        <option value="log">Log</option>
+                      </select>
+                    </>
+                  ) : isNote ? (
+                    <>
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.note ?? 60}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { note: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                      <input
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={slot.vel ?? 100}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { vel: clampMidi(Number(e.target.value) || 0) })}
+                      />
+                    </>
+                  ) : null}
+                  <select
+                    style={styles.select}
+                    value={slot.targetDeviceId ?? ""}
+                    onChange={(e) =>
+                      updateSlot(selectedControl!.id, idx, {
+                        targetDeviceId: e.target.value === "" ? null : e.target.value
+                      })
+                    }
+                  >
+                    <option value="">No target</option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name || d.id}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={styles.muted}>{deviceName}</span>
+                </div>
+              );
+            })}
           </div>
           {targetProfile ? (
             <div style={{ ...styles.row, marginTop: "12px", flexWrap: "wrap", gap: "6px" }}>
@@ -2348,6 +2685,16 @@ function MappingPage({
             <button style={styles.btnSecondary} onClick={onSendNote}>
               Send Note {note}
             </button>
+            <div style={styles.row}>
+              <span style={styles.muted}>Live send</span>
+              <button style={styles.btnTiny} onClick={() => nudgeControl((selectedControl.value ?? 0) - 8)}>
+                -
+              </button>
+              <button style={styles.btnTiny} onClick={() => nudgeControl((selectedControl.value ?? 0) + 8)}>
+                +
+              </button>
+              <span style={styles.muted}>Value: {selectedControl.value}</span>
+            </div>
           </div>
         </Panel>
       </div>
@@ -2378,6 +2725,8 @@ function SnapshotsPage({
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
 }) {
+  const colors = ["#38bdf8", "#f472b6", "#22d3ee", "#f97316", "#a3e635", "#c084fc", "#facc15", "#fb7185"];
+
   return (
     <Page>
       <PageHeader
@@ -2415,24 +2764,37 @@ function SnapshotsPage({
         }
       />
       <div style={styles.pageGrid2}>
-        <Panel title="Snapshot Grid">
-          <div style={styles.grid}>
-            {snapshots.map((t) => (
-              <div
-                key={t}
-                onClick={() => onSelectSnapshot(t)}
-                style={{
-                  ...styles.tile,
-                  backgroundColor: activeSnapshot === t ? "#0078d433" : "#222",
-                  borderColor: activeSnapshot === t ? "#0078d4" : "#333"
-                }}
-              >
-                <div style={styles.tileTitle}>{t}</div>
-                <div style={styles.tileMeta}>8 Targets</div>
-                {activeSnapshot === t ? <div style={{ ...styles.pill, marginTop: "4px" }}>Active</div> : null}
-                {pendingSnapshot === t ? <div style={{ ...styles.pill, marginTop: "4px" }}>Pending</div> : null}
-              </div>
-            ))}
+        <Panel title="Snapshot Pads">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
+            {snapshots.map((t, idx) => {
+              const color = colors[idx % colors.length];
+              const isActive = activeSnapshot === t;
+              const isPending = pendingSnapshot === t;
+              return (
+                <button
+                  key={t}
+                  onClick={() => onSelectSnapshot(t)}
+                  style={{
+                    height: 96,
+                    borderRadius: 14,
+                    border: `2px solid ${isActive ? color : "#1f2937"}`,
+                    background: isActive ? `${color}22` : "#0b1220",
+                    color: "#e2e8f0",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                    cursor: "pointer",
+                    boxShadow: isActive ? "0 0 20px rgba(0,0,0,0.35)" : "none",
+                    position: "relative"
+                  }}
+                >
+                  <div style={{ position: "absolute", top: 10, left: 10, fontSize: 11, color: "#cbd5e1" }}>{t}</div>
+                  <div style={{ position: "absolute", bottom: 10, right: 10, fontSize: 11, color }}>
+                    {isPending ? "Pending" : isActive ? "Active" : "Ready"}
+                  </div>
+                </button>
+              );
+            })}
             <div style={{ ...styles.tile, border: "1px dashed #444" }}>
               <Plus size={20} color="#666" />
             </div>
@@ -2444,16 +2806,39 @@ function SnapshotsPage({
               <span style={{ color: "#35c96a", fontSize: "12px" }}>{activeSnapshot ? "* Active" : "* Idle"}</span>
               {pendingSnapshot ? <span style={styles.muted}>Pending: {pendingSnapshot}</span> : null}
             </div>
+            <div style={styles.row}>
+              <span style={styles.muted}>Targets</span>
+              <span style={styles.pill}>8 mapped</span>
+            </div>
+            <div style={styles.muted}>Add per-parameter curves and slew here.</div>
           </div>
-          <div style={styles.table}>
-            <div style={styles.tableRow}>
-              <span style={styles.valueText}>Synth 1 Filter</span> <span style={styles.kpi}>127</span>
+        </Panel>
+        <Panel title="Morph (conceptual)">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={styles.row}>
+              <div style={{ ...styles.pillRow, border: "1px solid #1f2937" }}>
+                <span style={styles.muted}>A</span>
+                <select style={styles.select}>
+                  {snapshots.map((s) => (
+                    <option key={`a-${s}`}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ ...styles.pillRow, border: "1px solid #1f2937" }}>
+                <span style={styles.muted}>B</span>
+                <select style={styles.select}>
+                  {snapshots.map((s) => (
+                    <option key={`b-${s}`}>{s}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div style={styles.tableRow}>
-              <span style={styles.valueText}>Reverb Mix</span> <span style={styles.kpi}>88</span>
-            </div>
-            <div style={styles.tableRow}>
-              <span style={styles.valueText}>Distortion</span> <span style={styles.kpi}>10</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={styles.muted}>Crossfade</span>
+              <input type="range" min={0} max={100} defaultValue={0} />
+              <span style={styles.muted}>
+                Future: interpolate per-parameter with curves and staged fades (filters slow, mutes fast).
+              </span>
             </div>
           </div>
         </Panel>

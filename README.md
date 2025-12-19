@@ -22,9 +22,16 @@ Current desktop app highlights
 - Backend selector (WinMM active; Windows MIDI Services stubbed for future)
 - Device setup (up to 8), port binding, default channel/clock flag, OXI quick-setup + port labeling
 - Routing patchbay with filters, channel force/passthrough, clock thinning, loop guard
-- Mapping v1: virtual controls (8 slots) with curves/ranges + MIDI Learn (CC), plus Program Change + Note slots
+- Mapping v1: virtual controls (8 slots) with curves/ranges + MIDI Learn (CC), Program Change + Note slots; inline slot editor now has enable toggles, device pickers, curve/min/max, and a macro multi-bind shortcut
+- Surfaces board: live fader/knob/button cards wired to mapping emit; Surfaces Lab demos macro multi-bind with rate limiting and per-target curves
+- Snapshots: color-coded pads, quantize/jump/commit controls, conceptual morph stub
 - Persistence: saved project state (devices/routes/mapping) under Electron userData
 - Diagnostics card (sends test note), monitor view, manual ping (note/CC), outgoing messages visible in Monitor
+
+Latest updates (Dec 2025)
+- Added Surfaces board and control primitives (fader/knob/crossfader/pads/step grid) with coarse/fine drag and bi-directional feedback
+- Mapping page: slot editor now supports device selection, per-slot enable, curve/min/max editing; macro multi-bind button; assignment wizard stub with multi-select CCs, curve/range/start slot/device, and color highlighting
+- Snapshot UI refreshed with large pads and morph placeholder
 
 Roadmap (see `docs/roadmap.md` for full details)
 - Phase 0: MIDI backend abstraction (done)
