@@ -44,6 +44,7 @@ Docs
 - docs/instruments.md
 - docs/how-to.md
 - docs/midi_cc_implementation_guide - CC Map.csv
+- docs/engineering.md
 
 Agent entrypoints
 - AGENT_BRIEF.md

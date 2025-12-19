@@ -14,6 +14,7 @@ How to run next time
 2) Dev: `corepack pnpm -C apps/desktop dev` and use the Electron window (not the browser tab).
 3) Optional quick check: `corepack pnpm -C apps/desktop smoke:midi`.
 4) See `docs/how-to.md` for the current user-facing walkthrough (setup, mapping, snapshots, chains, clock, monitor).
+5) See `docs/engineering.md` for the current eng playbook (commands, stability checklist).
 
 Known gaps / next steps
 - Add basic lint/test scripts for desktop package.
