@@ -24,19 +24,30 @@ import {
 } from "lucide-react";
 import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
-import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
+import type {
+  MidiBackendInfo,
+  MidiPortInfo,
+  MidiPorts,
+  MidiSendPayload,
+  RouteConfig,
+  RouteFilter
+} from "../../shared/ipcTypes";
 import { defaultProjectState } from "../../shared/projectTypes";
-import type { AppView, DeviceConfig, ProjectStateV1 } from "../../shared/projectTypes";
+import type {
+  AppView,
+  ChainStep,
+  DeviceConfig,
+  ProjectStateV1,
+  SnapshotMode,
+  SnapshotQuantize
+} from "../../shared/projectTypes";
+import { quantizeToMs } from "./lib/tempo";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
 const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
 const CLOCK_PPQN = 24;
-
-type SnapshotQuantize = "immediate" | "bar1" | "bar4";
-type SnapshotMode = "jump" | "commit";
-type ChainStep = { snapshot: string; bars: number };
 
 const styles = {
   window: {
@@ -99,8 +110,8 @@ const styles = {
   },
   nav: {
     width: "240px",
-    backgroundColor: "#0f0f0f",
-    borderRight: "1px solid #1e1e1e",
+    background: "linear-gradient(180deg, #0f2435 0%, #0b1b28 100%)",
+    borderRight: "1px solid #0e3a50",
     display: "flex",
     flexDirection: "column"
   },
@@ -396,6 +407,7 @@ function defaultControls(): ControlElement[] {
 }
 
 export function App() {
+  const defaults = defaultProjectState();
   const midiApi = typeof window !== "undefined" ? window.midi : undefined;
   const [ports, setPorts] = useState<MidiPorts>({ inputs: [], outputs: [] });
   const [backends, setBackends] = useState<MidiBackendInfo[]>([]);
@@ -418,24 +430,19 @@ export function App() {
   const [clockDiv, setClockDiv] = useState(1);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
-  const [activeView, setActiveView] = useState<AppView>("setup");
+  const [activeView, setActiveView] = useState<AppView>(defaults.activeView);
   const [snapshots] = useState<string[]>(["INTRO", "VERSE", "CHORUS 1", "BUILD", "DROP!!", "OUTRO", "SOLO", "BREAK"]);
   const [activeSnapshot, setActiveSnapshot] = useState<string | null>(null);
   const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
-  const [snapshotQuantize, setSnapshotQuantize] = useState<SnapshotQuantize>("bar1");
-const [snapshotMode, setSnapshotMode] = useState<SnapshotMode>("jump");
-const [snapshotFadeMs, setSnapshotFadeMs] = useState(500);
-const snapshotTimerRef = useRef<number | null>(null);
-const [tempoBpm, setTempoBpm] = useState(124);
-const [useClockSync, setUseClockSync] = useState(false);
-const [clockBpm, setClockBpm] = useState<number | null>(null);
-const [followClockStart, setFollowClockStart] = useState(false);
-  const [chainSteps, setChainSteps] = useState<ChainStep[]>([
-    { snapshot: "INTRO", bars: 8 },
-    { snapshot: "VERSE", bars: 8 },
-    { snapshot: "CHORUS 1", bars: 8 },
-    { snapshot: "DROP!!", bars: 8 }
-  ]);
+  const [snapshotQuantize, setSnapshotQuantize] = useState<SnapshotQuantize>(defaults.snapshotQuantize);
+  const [snapshotMode, setSnapshotMode] = useState<SnapshotMode>(defaults.snapshotMode);
+  const [snapshotFadeMs, setSnapshotFadeMs] = useState(defaults.snapshotFadeMs);
+  const snapshotTimerRef = useRef<number | null>(null);
+  const [tempoBpm, setTempoBpm] = useState(defaults.tempoBpm);
+  const [useClockSync, setUseClockSync] = useState(defaults.useClockSync);
+  const [clockBpm, setClockBpm] = useState<number | null>(null);
+  const [followClockStart, setFollowClockStart] = useState(defaults.followClockStart);
+  const [chainSteps, setChainSteps] = useState<ChainStep[]>(defaults.chainSteps);
   const [chainPlaying, setChainPlaying] = useState(false);
   const chainTimerRef = useRef<number | null>(null);
   const [chainIndex, setChainIndex] = useState<number>(0);
@@ -447,6 +454,7 @@ const [followClockStart, setFollowClockStart] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSentStateJsonRef = useRef<string | null>(null);
+  const [clockHeartbeat, setClockHeartbeat] = useState(0);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
   const selectedDeviceIdRef = useRef<string | null>(null);
@@ -496,6 +504,13 @@ const [followClockStart, setFollowClockStart] = useState(false);
         setClockDiv(state.ui?.routeBuilder?.clockDiv ?? 1);
         setNote(state.ui?.diagnostics?.note ?? 60);
         setCcValue(state.ui?.diagnostics?.ccValue ?? 64);
+        setTempoBpm(state.tempoBpm ?? defaults.tempoBpm);
+        setUseClockSync(state.useClockSync ?? defaults.useClockSync);
+        setFollowClockStart(state.followClockStart ?? defaults.followClockStart);
+        setSnapshotQuantize(state.snapshotQuantize ?? defaults.snapshotQuantize);
+        setSnapshotMode(state.snapshotMode ?? defaults.snapshotMode);
+        setSnapshotFadeMs(state.snapshotFadeMs ?? defaults.snapshotFadeMs);
+        setChainSteps(Array.isArray(state.chainSteps) && state.chainSteps.length ? state.chainSteps : defaults.chainSteps);
       }
 
       await refreshBackends();
@@ -586,6 +601,7 @@ const [followClockStart, setFollowClockStart] = useState(false);
 
       if (evt.msg.t === "clock") {
         const now = evt.ts ?? Date.now();
+        setClockHeartbeat((v) => (v + 1) % 1000);
         const last = lastClockTickRef.current;
         if (last) {
           const dtMs = now - last;
@@ -646,6 +662,13 @@ const [followClockStart, setFollowClockStart] = useState(false);
       selectedOut,
       activeView,
       selectedDeviceId,
+      tempoBpm,
+      useClockSync,
+      followClockStart,
+      snapshotQuantize,
+      snapshotMode,
+      snapshotFadeMs,
+      chainSteps,
       devices,
       routes,
       controls,
@@ -703,6 +726,13 @@ const [followClockStart, setFollowClockStart] = useState(false);
     routes,
     controls,
     selectedControlId,
+    tempoBpm,
+    useClockSync,
+    followClockStart,
+    snapshotQuantize,
+    snapshotMode,
+    snapshotFadeMs,
+    chainSteps,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -726,6 +756,13 @@ const [followClockStart, setFollowClockStart] = useState(false);
       selectedOut,
       activeView,
       selectedDeviceId,
+      tempoBpm,
+      useClockSync,
+      followClockStart,
+      snapshotQuantize,
+      snapshotMode,
+      snapshotFadeMs,
+      chainSteps,
       devices,
       routes,
       controls,
@@ -762,6 +799,13 @@ const [followClockStart, setFollowClockStart] = useState(false);
     selectedOut,
     activeView,
     selectedDeviceId,
+    tempoBpm,
+    useClockSync,
+    followClockStart,
+    snapshotQuantize,
+    snapshotMode,
+    snapshotFadeMs,
+    chainSteps,
     devices,
     routes,
     controls,
@@ -788,6 +832,17 @@ const [followClockStart, setFollowClockStart] = useState(false);
     [log]
   );
   const logCapReached = activity.length >= LOG_LIMIT;
+  const clockStale = useMemo(
+    () => useClockSync && (!lastClockTickRef.current || Date.now() - lastClockTickRef.current > 2000),
+    [useClockSync, clockHeartbeat]
+  );
+
+  function relinkClock() {
+    lastClockTickRef.current = null;
+    clockBpmRef.current = null;
+    setClockBpm(null);
+    setClockHeartbeat((v) => (v + 1) % 1000);
+  }
 
   async function refreshPorts() {
     if (!midiApi) return;
@@ -799,6 +854,21 @@ const [followClockStart, setFollowClockStart] = useState(false);
       setSelectedOut((current) => current ?? available.outputs[0]?.id ?? null);
     } finally {
       setLoadingPorts(false);
+    }
+  }
+
+  async function panicAll() {
+    if (!midiApi) return;
+    const panicSrc: MidiPortInfo = { id: "panic", name: "Panic", direction: "out" };
+    const ts = Date.now();
+    setLog((current) => [{ ts, src: panicSrc, msg: { t: "stop" } as MidiMsg }, ...current].slice(0, LOG_LIMIT));
+    const outs = ports.outputs;
+    for (const out of outs) {
+      for (let ch = 1; ch <= 16; ch++) {
+        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
+        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
+      }
+      await midiApi.send({ portId: out.id, msg: { t: "stop" } });
     }
   }
 
@@ -1152,6 +1222,15 @@ const [followClockStart, setFollowClockStart] = useState(false);
     await midiApi.send({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
   }
 
+  function scheduleBurstSend(batch: MidiSendPayload[], sender: (payload: MidiSendPayload) => Promise<unknown>) {
+    const spacingMs = 6;
+    batch.slice(0, 512).forEach((payload, idx) => {
+      window.setTimeout(() => {
+        void sender(payload);
+      }, idx * spacingMs);
+    });
+  }
+
   async function sendSnapshotNow() {
     if (!midiApi) return;
     const batches: { portId: string; msg: MidiMsg }[] = [];
@@ -1169,25 +1248,7 @@ const [followClockStart, setFollowClockStart] = useState(false);
         });
       });
     });
-    let delay = 0;
-    for (const item of batches) {
-      setTimeout(() => {
-        void midiApi.send(item);
-      }, delay);
-      delay += 8; // light burst spacing
-    }
-  }
-
-function quantizeToMs(q: SnapshotQuantize, bpm: number): number {
-  const quarterMs = bpm > 0 ? (60000 / bpm) : 60000 / 120;
-  switch (q) {
-    case "immediate":
-      return 0;
-      case "bar4":
-        return quarterMs * 16;
-      default:
-        return quarterMs * 4;
-    }
+    scheduleBurstSend(batches, (payload) => midiApi.send(payload));
   }
 
   function clearSnapshotTimer() {
@@ -1347,6 +1408,8 @@ function quantizeToMs(q: SnapshotQuantize, bpm: number): number {
           }}
           clockBpm={clockBpm}
           useClockSync={useClockSync}
+          clockStale={clockStale}
+          onRelinkClock={relinkClock}
           onToggleClockSync={setUseClockSync}
           followClockStart={followClockStart}
           onToggleFollowClockStart={setFollowClockStart}
@@ -1363,7 +1426,7 @@ function quantizeToMs(q: SnapshotQuantize, bpm: number): number {
           }
         />
         <BodySplitPane>
-          <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} />
+          <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} onPanic={panicAll} />
           <MainContentArea
             route={route}
             ports={ports}
@@ -1447,6 +1510,8 @@ function TopStatusBar({
   onTempoChange,
   clockBpm,
   useClockSync,
+  clockStale,
+  onRelinkClock,
   onToggleClockSync,
   followClockStart,
   onToggleFollowClockStart,
@@ -1465,6 +1530,8 @@ function TopStatusBar({
   onTempoChange: (bpm: number) => void;
   clockBpm: number | null;
   useClockSync: boolean;
+  clockStale: boolean;
+  onRelinkClock: () => void;
   onToggleClockSync: (next: boolean) => void;
   followClockStart: boolean;
   onToggleFollowClockStart: (next: boolean) => void;
@@ -1481,6 +1548,8 @@ function TopStatusBar({
           onTempoChange={onTempoChange}
           clockBpm={clockBpm}
           useClockSync={useClockSync}
+          clockStale={clockStale}
+          onRelinkClock={onRelinkClock}
           onToggleClockSync={onToggleClockSync}
           followClockStart={followClockStart}
           onToggleFollowClockStart={onToggleFollowClockStart}
@@ -1493,7 +1562,13 @@ function TopStatusBar({
         backendLabel={backendLabel}
         inputLabel={inputLabel}
         outputLabel={outputLabel}
-        clockLabel={useClockSync ? `Clock: ${clockBpm?.toFixed(1) ?? "??"} bpm` : "Clock: Manual"}
+        clockLabel={
+          useClockSync
+            ? clockStale
+              ? "Clock: waiting…"
+              : `Clock: ${clockBpm?.toFixed(1) ?? "??"} bpm`
+            : "Clock: Manual"
+        }
       />
     </>
   );
@@ -1517,6 +1592,8 @@ function TransportCluster({
   onTempoChange,
   clockBpm,
   useClockSync,
+  clockStale,
+  onRelinkClock,
   onToggleClockSync,
   followClockStart,
   onToggleFollowClockStart
@@ -1525,6 +1602,8 @@ function TransportCluster({
   onTempoChange: (bpm: number) => void;
   clockBpm: number | null;
   useClockSync: boolean;
+  clockStale: boolean;
+  onRelinkClock: () => void;
   onToggleClockSync: (next: boolean) => void;
   followClockStart: boolean;
   onToggleFollowClockStart: (next: boolean) => void;
@@ -1543,14 +1622,31 @@ function TransportCluster({
           </button>
         </div>
         <label style={styles.toggleRow}>
-          <input type="checkbox" checked={useClockSync} onChange={(e) => onToggleClockSync(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={useClockSync}
+            title="Use external MIDI clock for tempo"
+            onChange={(e) => onToggleClockSync(e.target.checked)}
+          />
           <span style={styles.muted}>Follow MIDI Clock</span>
         </label>
         <label style={styles.toggleRow}>
-          <input type="checkbox" checked={followClockStart} onChange={(e) => onToggleFollowClockStart(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={followClockStart}
+            title="Use external start/stop to run chains"
+            onChange={(e) => onToggleFollowClockStart(e.target.checked)}
+          />
           <span style={styles.muted}>Clock start/stop drives chain</span>
         </label>
-        {clockBpm ? <span style={styles.muted}>Clock BPM: {clockBpm.toFixed(1)}</span> : null}
+        <span style={styles.muted}>
+          {useClockSync ? (clockStale ? "Clock: waiting…" : `Clock BPM: ${clockBpm?.toFixed(1) ?? "??"}`) : "Manual tempo"}
+        </span>
+        {useClockSync ? (
+          <button style={styles.btnTiny} onClick={onRelinkClock} title="Reset clock detection">
+            Relink Clock
+          </button>
+        ) : null}
         <button style={styles.btnPrimary}>
           <Play size={14} fill="currentColor" />
         </button>
@@ -1663,7 +1759,15 @@ function BodySplitPane({ children }: { children: ReactNode }) {
   return <div style={styles.body}>{children}</div>;
 }
 
-function LeftNavRail({ route, onChangeRoute }: { route: NavRoute; onChangeRoute: (route: NavRoute) => void }) {
+function LeftNavRail({
+  route,
+  onChangeRoute,
+  onPanic
+}: {
+  route: NavRoute;
+  onChangeRoute: (route: NavRoute) => void;
+  onPanic: () => void;
+}) {
   const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
     { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
@@ -1701,7 +1805,9 @@ function LeftNavRail({ route, onChangeRoute }: { route: NavRoute; onChangeRoute:
         ))}
       </div>
       <div style={styles.navFooter}>
-        <button style={styles.btnDanger}>MIDI PANIC</button>
+        <button style={styles.btnDanger} onClick={onPanic}>
+          MIDI PANIC
+        </button>
         <label style={styles.toggleRow}>
           <input type="checkbox" defaultChecked />
           <span style={styles.muted}>Safe Mode</span>
@@ -2335,7 +2441,7 @@ function SnapshotsPage({
         <Panel title={`Selected: ${activeSnapshot ?? "None"}`}>
           <div style={styles.card}>
             <div style={styles.row}>
-              <span style={{ color: "#35c96a", fontSize: "12px" }}>{activeSnapshot ? "● Active" : "● Idle"}</span>
+              <span style={{ color: "#35c96a", fontSize: "12px" }}>{activeSnapshot ? "* Active" : "* Idle"}</span>
               {pendingSnapshot ? <span style={styles.muted}>Pending: {pendingSnapshot}</span> : null}
             </div>
           </div>

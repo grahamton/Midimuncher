@@ -24,7 +24,7 @@ describe("ProjectStorage", () => {
     assert.deepStrictEqual(JSON.parse(await fs.readFile(targetPath, "utf8")), created);
     assert.ok(await fs.readFile(backupPath, "utf8"));
 
-    await storage.save({ ...created, schemaVersion: 1, updatedAt: 1234 });
+    await storage.save({ ...created, schemaVersion: 2, updatedAt: 1234 });
     await fs.rm(targetPath);
 
     const restored = await storage.load(() => defaultProjectDoc());
