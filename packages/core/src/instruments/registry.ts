@@ -13,7 +13,9 @@ export type InstrumentProfile = {
   cc: InstrumentCC[];
 };
 
-export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
+import { GENERATED_PROFILES } from "./generatedProfiles";
+
+const BASE_PROFILES: InstrumentProfile[] = [
   {
     id: "oxi_one",
     name: "OXI One (hub)",
@@ -106,8 +108,12 @@ export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
   }
 ];
 
+export const INSTRUMENT_PROFILES: InstrumentProfile[] = [
+  ...BASE_PROFILES,
+  ...GENERATED_PROFILES.filter((p) => !BASE_PROFILES.some((base) => base.id === p.id))
+];
+
 export function getInstrumentProfile(id: string | null | undefined): InstrumentProfile | null {
   if (!id) return null;
   return INSTRUMENT_PROFILES.find((p) => p.id === id) ?? null;
 }
-

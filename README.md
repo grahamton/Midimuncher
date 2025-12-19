@@ -12,10 +12,11 @@ Quick start
 1. Install Node 20+ and enable corepack (`corepack enable`)
 2. Install deps: `corepack pnpm install`
 3. Dev server: `corepack pnpm -C apps/desktop dev`
+   - Or run the VS Code task `run:desktop-app` / `dev:desktop`
 4. Smoke test MIDI ports: `corepack pnpm -C apps/desktop smoke:midi`
 5. Smoke test persistence: `corepack pnpm -C apps/desktop smoke:persist`
 6. Smoke test mapping: `corepack pnpm -C apps/desktop smoke:mapping`
-7. Run the VS Code task `dev:desktop` for the same dev command
+7. User guide: see `docs/how-to.md` for the current flow (setup, mapping, snapshots, chains, clock, monitor)
 
 Current desktop app highlights
 - Backend selector (WinMM active; Windows MIDI Services stubbed for future)
@@ -41,6 +42,8 @@ Docs
 - docs/sequencer-modules.md
 - docs/roadmap.md
 - docs/instruments.md
+- docs/how-to.md
+- docs/midi_cc_implementation_guide - CC Map.csv
 
 Agent entrypoints
 - AGENT_BRIEF.md

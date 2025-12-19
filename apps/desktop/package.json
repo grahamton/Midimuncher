@@ -27,6 +27,7 @@
     "@julusian/midi": "^3.2.1",
     "@midi-playground/core": "workspace:*",
     "electron": "^32.2.0",
+    "lucide-react": "^0.562.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -37,8 +38,8 @@
     "@vitejs/plugin-react": "^4.4.2",
     "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
-    "tsx": "^4.19.1",
     "tsup": "^8.3.5",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "wait-on": "^7.2.0"
@@ -47,7 +48,9 @@
     "target": "node20",
     "shims": false,
     "splitting": false,
-    "noExternal": ["@midi-playground/core"],
+    "noExternal": [
+      "@midi-playground/core"
+    ],
     "clean": true
   }
 }

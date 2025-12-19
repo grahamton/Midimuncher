@@ -4,9 +4,31 @@
     {
       "label": "dev:desktop",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["-C", "apps/desktop", "dev"],
-      "problemMatcher": []
+      "command": "corepack",
+      "args": ["pnpm", "-C", "apps/desktop", "dev"],
+      "problemMatcher": [],
+      "options": {
+        "shell": {
+          "executable": "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe"
+        }
+      }
+    },
+    {
+      "label": "run:desktop-app",
+      "type": "shell",
+      "command": "corepack",
+      "args": ["pnpm", "-C", "apps/desktop", "dev"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "options": {
+        "shell": {
+          "executable": "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe"
+        }
+      }
     },
     {
       "label": "lint:all",

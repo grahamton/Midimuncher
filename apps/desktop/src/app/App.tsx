@@ -1,36 +1,390 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Activity,
+  AlertCircle,
+  Camera,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  HelpCircle,
+  Layers,
+  Link as LinkIcon,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
+  Save,
+  Search,
+  Settings,
+  Square,
+  Trash2,
+  Zap
+} from "lucide-react";
 import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
-import type {
-  ControlElement,
-  Curve,
-  MappingSlot,
-  MidiEvent,
-  MidiMsg,
-  SnapshotRecallStrategy
-} from "@midi-playground/core";
-import type {
-  MidiBackendInfo,
-  MidiPortInfo,
-  MidiPorts,
-  RouteConfig,
-  RouteFilter,
-  SnapshotCapturePayload,
-  SnapshotRecallPayload
-} from "../../shared/ipcTypes";
+import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
+import type { MidiBackendInfo, MidiPortInfo, MidiPorts, RouteConfig, RouteFilter } from "../../shared/ipcTypes";
 import { defaultProjectState } from "../../shared/projectTypes";
-import type {
-  AppView,
-  DeviceConfig,
-  ProjectState,
-  SnapshotBankState,
-  SnapshotSlotState,
-  SnapshotsState
-} from "../../shared/projectTypes";
+import type { AppView, DeviceConfig, ProjectStateV1 } from "../../shared/projectTypes";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
 const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
+const CLOCK_PPQN = 24;
+
+type SnapshotQuantize = "immediate" | "bar1" | "bar4";
+type SnapshotMode = "jump" | "commit";
+type ChainStep = { snapshot: string; bars: number };
+
+const styles = {
+  window: {
+    height: "100vh",
+    width: "100vw",
+    backgroundColor: "#0a0a0a",
+    color: "#e0e0e0",
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden"
+  },
+  chrome: {
+    display: "flex",
+    flexDirection: "column",
+    height: "100%"
+  },
+  topBar: {
+    height: "60px",
+    backgroundColor: "#1a1a1a",
+    borderBottom: "1px solid #333",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 16px",
+    gap: "24px"
+  },
+  cluster: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px"
+  },
+  badgeTitle: {
+    fontSize: "10px",
+    textTransform: "uppercase",
+    color: "#888",
+    letterSpacing: "0.05em"
+  },
+  badgeValue: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px"
+  },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px"
+  },
+  pillRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    backgroundColor: "#252525",
+    padding: "4px 8px",
+    borderRadius: "4px"
+  },
+  body: {
+    flex: 1,
+    display: "flex",
+    overflow: "hidden"
+  },
+  nav: {
+    width: "240px",
+    backgroundColor: "#0f0f0f",
+    borderRight: "1px solid #1e1e1e",
+    display: "flex",
+    flexDirection: "column"
+  },
+  navHeader: {
+    padding: "20px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px"
+  },
+  logo: {
+    fontSize: "14px",
+    fontWeight: "bold",
+    color: "#fff",
+    letterSpacing: "0.1em"
+  },
+  navSection: {
+    flex: 1,
+    padding: "10px 0"
+  },
+  navItem: {
+    width: "100%",
+    padding: "12px 20px",
+    border: "none",
+    textAlign: "left",
+    color: "#b5b5b5",
+    cursor: "pointer",
+    fontSize: "14px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    transition: "all 0.2s",
+    background: "none",
+    backgroundImage: "none"
+  },
+  navFooter: {
+    padding: "20px",
+    borderTop: "1px solid #1e1e1e",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px"
+  },
+  content: {
+    flex: 1,
+    backgroundColor: "#0f0f0f",
+    overflowY: "auto",
+    padding: "24px"
+  },
+  bottomBar: {
+    height: "32px",
+    backgroundColor: "#101010",
+    borderTop: "1px solid #1e1e1e",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 12px",
+    fontSize: "11px",
+    color: "#888"
+  },
+  page: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+    maxWidth: "1200px",
+    margin: "0 auto"
+  },
+  pageHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    borderBottom: "1px solid #222",
+    paddingBottom: "16px"
+  },
+  pageTitle: {
+    fontSize: "24px",
+    fontWeight: "300",
+    margin: 0
+  },
+  pageGrid2: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "20px"
+  },
+  panel: {
+    backgroundColor: "#1a1a1a",
+    border: "1px solid #333",
+    borderRadius: "4px",
+    display: "flex",
+    flexDirection: "column"
+  },
+  panelHeader: {
+    padding: "12px 16px",
+    borderBottom: "1px solid #333",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#222"
+  },
+  panelTitle: {
+    fontSize: "12px",
+    fontWeight: "600",
+    color: "#bbb"
+  },
+  panelContent: {
+    padding: "16px",
+    flex: 1
+  },
+  btnPrimary: {
+    backgroundColor: "#1a89c8",
+    background: "#1a89c8",
+    backgroundImage: "none",
+    color: "white",
+    border: "none",
+    padding: "6px 16px",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: "500"
+  },
+  btnSecondary: {
+    backgroundColor: "#1c1f24",
+    background: "#1c1f24",
+    backgroundImage: "none",
+    color: "#e1e8f0",
+    border: "1px solid #29313a",
+    padding: "6px 12px",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "13px"
+  },
+  btnDanger: {
+    backgroundColor: "#a11b1b",
+    background: "#a11b1b",
+    backgroundImage: "none",
+    color: "white",
+    border: "1px solid #c02424",
+    padding: "6px 12px",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "13px"
+  },
+  btnTiny: {
+    backgroundColor: "#2a2a2a",
+    background: "#2a2a2a",
+    backgroundImage: "none",
+    color: "#ccc",
+    border: "1px solid #444",
+    padding: "2px 6px",
+    borderRadius: "2px",
+    fontSize: "10px",
+    cursor: "pointer"
+  },
+  input: {
+    backgroundColor: "#0a0a0a",
+    border: "1px solid #333",
+    color: "#eee",
+    padding: "6px 10px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    width: "100%"
+  },
+  inputNarrow: {
+    backgroundColor: "#0a0a0a",
+    border: "1px solid #333",
+    color: "#eee",
+    padding: "4px 6px",
+    borderRadius: "4px",
+    fontSize: "12px",
+    width: "50px",
+    textAlign: "center"
+  },
+  select: {
+    backgroundColor: "#2a2a2a",
+    border: "1px solid #444",
+    color: "#eee",
+    padding: "4px 8px",
+    borderRadius: "4px",
+    fontSize: "12px"
+  },
+  selectWide: {
+    backgroundColor: "#2a2a2a",
+    border: "1px solid #444",
+    color: "#eee",
+    padding: "4px 8px",
+    borderRadius: "4px",
+    fontSize: "12px",
+    width: "100%"
+  },
+  pill: {
+    padding: "2px 8px",
+    backgroundColor: "#333",
+    borderRadius: "10px",
+    fontSize: "10px",
+    color: "#aaa"
+  },
+  dot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%"
+  },
+  valueText: {
+    fontSize: "13px",
+    fontWeight: "500"
+  },
+  kpi: {
+    fontSize: "16px",
+    fontWeight: "bold",
+    fontFamily: "monospace",
+    color: "#35c96a"
+  },
+  table: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px"
+  },
+  tableRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "4px 8px",
+    backgroundColor: "#222",
+    borderRadius: "4px"
+  },
+  cellSmall: {
+    width: "40px",
+    color: "#666",
+    fontSize: "11px",
+    fontFamily: "monospace"
+  },
+  toggleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    cursor: "pointer"
+  },
+  muted: {
+    fontSize: "12px",
+    color: "#666"
+  },
+  card: {
+    padding: "12px",
+    backgroundColor: "#222",
+    borderRadius: "4px",
+    border: "1px solid #333",
+    marginBottom: "8px"
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
+    gap: "8px"
+  },
+  tile: {
+    aspectRatio: "1/1",
+    backgroundColor: "#222",
+    border: "1px solid #333",
+    borderRadius: "4px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    cursor: "pointer",
+    padding: "8px",
+    textAlign: "center",
+    transition: "all 0.1s"
+  },
+  tileTitle: {
+    fontSize: "12px",
+    fontWeight: "bold",
+    marginBottom: "4px"
+  },
+  tileMeta: {
+    fontSize: "9px",
+    color: "#555"
+  },
+  queueStrip: {
+    height: "40px",
+    backgroundColor: "#111",
+    borderTop: "1px solid #333",
+    marginTop: "20px",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 16px",
+    gap: "12px"
+  }
+};
 
 function defaultControls(): ControlElement[] {
   return [
@@ -62,16 +416,36 @@ export function App() {
   const [allowTransport, setAllowTransport] = useState(true);
   const [allowClock, setAllowClock] = useState(true);
   const [clockDiv, setClockDiv] = useState(1);
-  const [snapshots, setSnapshots] = useState<SnapshotsState>(() => defaultProjectState().snapshots);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
   const [activeView, setActiveView] = useState<AppView>("setup");
+  const [snapshots] = useState<string[]>(["INTRO", "VERSE", "CHORUS 1", "BUILD", "DROP!!", "OUTRO", "SOLO", "BREAK"]);
+  const [activeSnapshot, setActiveSnapshot] = useState<string | null>(null);
+  const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
+  const [snapshotQuantize, setSnapshotQuantize] = useState<SnapshotQuantize>("bar1");
+const [snapshotMode, setSnapshotMode] = useState<SnapshotMode>("jump");
+const [snapshotFadeMs, setSnapshotFadeMs] = useState(500);
+const snapshotTimerRef = useRef<number | null>(null);
+const [tempoBpm, setTempoBpm] = useState(124);
+const [useClockSync, setUseClockSync] = useState(false);
+const [clockBpm, setClockBpm] = useState<number | null>(null);
+const [followClockStart, setFollowClockStart] = useState(false);
+  const [chainSteps, setChainSteps] = useState<ChainStep[]>([
+    { snapshot: "INTRO", bars: 8 },
+    { snapshot: "VERSE", bars: 8 },
+    { snapshot: "CHORUS 1", bars: 8 },
+    { snapshot: "DROP!!", bars: 8 }
+  ]);
+  const [chainPlaying, setChainPlaying] = useState(false);
+  const chainTimerRef = useRef<number | null>(null);
+  const [chainIndex, setChainIndex] = useState<number>(0);
+  const lastClockTickRef = useRef<number | null>(null);
+  const clockBpmRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [sequencer, setSequencer] = useState<SequencerProjectState>(() => defaultSequencerState());
   const lastSentStateJsonRef = useRef<string | null>(null);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
@@ -122,7 +496,6 @@ export function App() {
         setClockDiv(state.ui?.routeBuilder?.clockDiv ?? 1);
         setNote(state.ui?.diagnostics?.note ?? 60);
         setCcValue(state.ui?.diagnostics?.ccValue ?? 64);
-        setSnapshots(state.snapshots ?? defaultProjectState().snapshots);
       }
 
       await refreshBackends();
@@ -164,8 +537,7 @@ export function App() {
 
     const unsubscribe = midiApi.onEvent((evt) => {
       const target = learnTargetRef.current;
-      const msg = evt.msg;
-      if (target && msg.t === "cc") {
+      if (target && evt.msg.t === "cc") {
         const currentSelectedIn = selectedInRef.current;
         if (!currentSelectedIn || evt.src.id === currentSelectedIn) {
           learnTargetRef.current = null;
@@ -188,8 +560,8 @@ export function App() {
                 slots[target.slotIndex] = {
                   enabled: true,
                   kind: "cc",
-                  cc: clampMidi(msg.cc),
-                  channel: clampChannel(msg.ch),
+                  cc: clampMidi(evt.msg.cc),
+                  channel: clampChannel(evt.msg.ch),
                   min: 0,
                   max: 127,
                   curve: "linear",
@@ -199,8 +571,8 @@ export function App() {
                 slots[target.slotIndex] = {
                   ...existing,
                   enabled: true,
-                  cc: clampMidi(msg.cc),
-                  channel: clampChannel(msg.ch),
+                  cc: clampMidi(evt.msg.cc),
+                  channel: clampChannel(evt.msg.ch),
                   targetDeviceId: existing.targetDeviceId ?? fallbackTarget
                 };
               }
@@ -211,6 +583,28 @@ export function App() {
       }
 
       setLog((current) => [evt, ...current].slice(0, LOG_LIMIT));
+
+      if (evt.msg.t === "clock") {
+        const now = evt.ts ?? Date.now();
+        const last = lastClockTickRef.current;
+        if (last) {
+          const dtMs = now - last;
+          if (dtMs > 0) {
+            const bpm = 60000 / (dtMs * CLOCK_PPQN);
+            const smoothed = clockBpmRef.current ? clockBpmRef.current * 0.7 + bpm * 0.3 : bpm;
+            clockBpmRef.current = smoothed;
+            setClockBpm(smoothed);
+          }
+        }
+        lastClockTickRef.current = now;
+      }
+
+      if (evt.msg.t === "start" && followClockStart) {
+        startChain();
+      }
+      if (evt.msg.t === "stop" && followClockStart) {
+        stopChain();
+      }
     });
     return () => {
       cancelled = true;
@@ -246,7 +640,7 @@ export function App() {
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
 
-    const state: ProjectState = {
+    const state: ProjectStateV1 = {
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
@@ -256,7 +650,6 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      snapshots,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -310,7 +703,6 @@ export function App() {
     routes,
     controls,
     selectedControlId,
-    snapshots,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -319,29 +711,16 @@ export function App() {
     allowTransport,
     allowClock,
     clockDiv,
-    sequencer,
     note,
     ccValue
   ]);
 
   useEffect(() => {
     if (!midiApi || !projectHydrated) return;
-    const payload: SequencerApplyPayload = {
-      chains: sequencer.chains,
-      activeChainId: sequencer.activeChainId,
-      transport: sequencer.transport,
-      world: sequencer.world,
-      devices
-    };
-    void midiApi.applySequencer(payload).catch((err) => console.error("applySequencer failed", err));
-  }, [midiApi, projectHydrated, sequencer, devices]);
-
-  useEffect(() => {
-    if (!midiApi || !projectHydrated) return;
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
 
-    const state: ProjectState = {
+    const state: ProjectStateV1 = {
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
@@ -351,7 +730,6 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      snapshots,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -388,7 +766,6 @@ export function App() {
     routes,
     controls,
     selectedControlId,
-    snapshots,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -397,7 +774,6 @@ export function App() {
     allowTransport,
     allowClock,
     clockDiv,
-    sequencer,
     note,
     ccValue
   ]);
@@ -412,73 +788,6 @@ export function App() {
     [log]
   );
   const logCapReached = activity.length >= LOG_LIMIT;
-  const activeSnapshotBank = useMemo(
-    () => snapshots.banks.find((b) => b.id === snapshots.activeBankId) ?? snapshots.banks[0] ?? null,
-    [snapshots]
-  );
-
-  useEffect(() => {
-    if (!snapshots.activeBankId && snapshots.banks[0]) {
-      setSnapshots((current) => ({ ...current, activeBankId: current.banks[0]?.id ?? null }));
-    }
-  }, [snapshots]);
-
-  function setActiveSnapshotBank(bankId: string) {
-    setSnapshots((current) => ({ ...current, activeBankId: bankId }));
-  }
-
-  function updateSnapshotBank(bankId: string, updater: (bank: SnapshotBankState) => SnapshotBankState) {
-    setSnapshots((current) => ({
-      ...current,
-      banks: current.banks.map((bank) => (bank.id === bankId ? updater(bank) : bank))
-    }));
-  }
-
-  function updateSnapshotSlot(bankId: string, slotId: string, updater: (slot: SnapshotSlotState) => SnapshotSlotState) {
-    updateSnapshotBank(bankId, (bank) => ({
-      ...bank,
-      slots: bank.slots.map((slot) => (slot.id === slotId ? updater(slot) : slot))
-    }));
-  }
-
-  function updateSnapshotsState(partial: Partial<SnapshotsState>) {
-    setSnapshots((current) => ({ ...current, ...partial }));
-  }
-
-  async function captureSnapshotSlot(bankId: string, slotId: string) {
-    if (!midiApi) return;
-    try {
-      const payload: SnapshotCapturePayload = { notes: snapshots.captureNotes };
-      const snapshot = await midiApi.captureSnapshot(payload);
-      updateSnapshotSlot(bankId, slotId, (slot) => ({
-        ...slot,
-        snapshot,
-        lastCapturedAt: snapshot.capturedAt,
-        notes: snapshots.captureNotes
-      }));
-    } catch (err) {
-      console.error("Failed to capture snapshot", err);
-    }
-  }
-
-  async function recallSnapshotSlot(bankId: string, slotId: string, strategy?: SnapshotRecallStrategy) {
-    if (!midiApi) return;
-    const bank = snapshots.banks.find((b) => b.id === bankId);
-    const slot = bank?.slots.find((s) => s.id === slotId);
-    if (!slot?.snapshot) return;
-    const payload: SnapshotRecallPayload = {
-      snapshot: slot.snapshot,
-      strategy: strategy ?? snapshots.strategy,
-      fadeMs: snapshots.fadeMs,
-      commitDelayMs: snapshots.commitDelayMs,
-      burst: snapshots.burst
-    };
-    try {
-      await midiApi.recallSnapshot(payload);
-    } catch (err) {
-      console.error("Failed to recall snapshot", err);
-    }
-  }
 
   async function refreshPorts() {
     if (!midiApi) return;
@@ -495,21 +804,19 @@ export function App() {
 
   async function resetProject() {
     if (!midiApi) return;
-    const ok = window.confirm("Reset project? This clears devices, routes, mappings, and snapshots.");
+    const ok = window.confirm("Reset project? This clears devices, routes, and mappings.");
     if (!ok) return;
 
     const selectedBackendId = backends.find((b) => b.selected)?.id ?? null;
-    const sequencerState = defaultSequencerState();
     const base = defaultProjectState();
-    const state: ProjectState = {
+    const state: ProjectStateV1 = {
       ...base,
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
       selectedDeviceId: null,
       controls: defaultControls(),
-      selectedControlId: "knob-1",
-      sequencer: sequencerState
+      selectedControlId: "knob-1"
     };
 
     setActiveView(state.activeView);
@@ -518,7 +825,6 @@ export function App() {
     setRoutes(state.routes);
     setControls(state.controls);
     setSelectedControlId(state.selectedControlId ?? "knob-1");
-    setSnapshots(state.snapshots);
     setForceChannelEnabled(state.ui.routeBuilder.forceChannelEnabled);
     setRouteChannel(state.ui.routeBuilder.routeChannel);
     setAllowNotes(state.ui.routeBuilder.allowNotes);
@@ -529,7 +835,6 @@ export function App() {
     setClockDiv(state.ui.routeBuilder.clockDiv);
     setNote(state.ui.diagnostics.note);
     setCcValue(state.ui.diagnostics.ccValue);
-    setSequencer(sequencerState);
 
     setSaveStatus("saving");
     const saved = await midiApi.setProjectState(state);
@@ -637,6 +942,24 @@ export function App() {
     });
   }
 
+  async function sendQuickNote(portId: string | null, channel: number, noteValue: number, velocity = 100) {
+    if (!midiApi || !portId) return;
+    await midiApi.send({ portId, msg: { t: "noteOn", ch: channel, note: noteValue, vel: velocity } });
+    setTimeout(() => {
+      void midiApi.send({ portId, msg: { t: "noteOff", ch: channel, note: noteValue, vel: 0 } });
+    }, 180);
+  }
+
+  async function sendQuickCc(portId: string | null, channel: number, cc: number, val: number) {
+    if (!midiApi || !portId) return;
+    await midiApi.send({ portId, msg: { t: "cc", ch: channel, cc, val } });
+  }
+
+  async function sendQuickProgram(portId: string | null, channel: number, program: number) {
+    if (!midiApi || !portId) return;
+    await midiApi.send({ portId, msg: { t: "programChange", ch: channel, program } });
+  }
+
   function addDevice() {
     if (devices.length >= MAX_DEVICES) return;
     const nextIndex = devices.length + 1;
@@ -703,6 +1026,86 @@ export function App() {
     setRoutes((current) => [...current, route]);
   }
 
+  function addDeviceRoutes() {
+    setRoutes((current) => {
+      const next = [...current];
+      devices.forEach((device) => {
+        if (!device.inputId || !device.outputId) return;
+        const exists = next.some((r) => r.fromId === device.inputId && r.toId === device.outputId);
+        if (exists) return;
+        const allowTypes: MidiMsg["t"][] = [];
+        if (allowNotes) allowTypes.push("noteOn", "noteOff");
+        if (allowCc) allowTypes.push("cc");
+        if (allowExpression) allowTypes.push("pitchBend", "aftertouch");
+        if (allowTransport) allowTypes.push("start", "stop", "continue");
+        if (allowClock) allowTypes.push("clock");
+        next.push({
+          id: makeRouteId(),
+          fromId: device.inputId,
+          toId: device.outputId,
+          channelMode: forceChannelEnabled ? "force" : "passthrough",
+          forceChannel: forceChannelEnabled ? clampChannel(device.channel ?? routeChannel) : undefined,
+          filter: {
+            allowTypes: allowTypes.length ? allowTypes : undefined,
+            clockDiv: clockDiv > 1 ? clockDiv : undefined
+          }
+        });
+      });
+      return next;
+    });
+  }
+
+  async function quickStart() {
+    if (!midiApi) return;
+    setLoadingPorts(true);
+    try {
+      const available = await midiApi.listPorts();
+      setPorts(available);
+      const nextIn = available.inputs[0]?.id ?? null;
+      const nextOut = available.outputs[0]?.id ?? null;
+      setSelectedIn(nextIn);
+      setSelectedOut(nextOut);
+      if (nextIn && nextOut) {
+        const exists = routes.some((r) => r.fromId === nextIn && r.toId === nextOut);
+        if (!exists) {
+          const allowTypes: MidiMsg["t"][] = [];
+          if (allowNotes) {
+            allowTypes.push("noteOn", "noteOff");
+          }
+          if (allowCc) {
+            allowTypes.push("cc");
+          }
+          if (allowExpression) {
+            allowTypes.push("pitchBend", "aftertouch");
+          }
+          if (allowTransport) {
+            allowTypes.push("start", "stop", "continue");
+          }
+          if (allowClock) {
+            allowTypes.push("clock");
+          }
+
+          setRoutes((current) => [
+            ...current,
+            {
+              id: makeRouteId(),
+              fromId: nextIn,
+              toId: nextOut,
+              channelMode: forceChannelEnabled ? "force" : "passthrough",
+              forceChannel: forceChannelEnabled ? clampChannel(routeChannel) : undefined,
+              filter: {
+                allowTypes: allowTypes.length ? allowTypes : undefined,
+                clockDiv: clockDiv > 1 ? clockDiv : undefined
+              }
+            }
+          ]);
+        }
+      }
+    } finally {
+      setLoadingPorts(false);
+    }
+  }
+
   function removeRoute(id: string) {
     setRoutes((current) => current.filter((r) => r.id !== id));
   }
@@ -749,1472 +1152,1438 @@ export function App() {
     await midiApi.send({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
   }
 
-  const activeChain = useMemo(() => {
-    const found = sequencer.chains.find((c) => c.id === sequencer.activeChainId);
-    return found ?? sequencer.chains[0] ?? null;
-  }, [sequencer]);
-
-  function makeStep(chainId: string, index: number): SequencerStepConfig {
-    const base = defaultSequencerStep(index);
-    return {
-      ...base,
-      id: `${chainId}-step-${index + 1}`,
-      name: `Step ${index + 1}`
-    };
+  async function sendSnapshotNow() {
+    if (!midiApi) return;
+    const batches: { portId: string; msg: MidiMsg }[] = [];
+    devices.forEach((device) => {
+      if (!device.outputId) return;
+      controls.forEach((control) => {
+        control.slots.forEach((slot) => {
+          if (!slot?.enabled || slot.kind !== "cc") return;
+          const targetId = slot.targetDeviceId ?? device.id;
+          if (targetId !== device.id) return;
+          batches.push({
+            portId: device.outputId!,
+            msg: { t: "cc", ch: clampChannel(slot.channel ?? device.channel), cc: slot.cc ?? 0, val: slot.max ?? 127 }
+          });
+        });
+      });
+    });
+    let delay = 0;
+    for (const item of batches) {
+      setTimeout(() => {
+        void midiApi.send(item);
+      }, delay);
+      delay += 8; // light burst spacing
+    }
   }
 
-  function addChain() {
-    setSequencer((current) => {
-      if (current.chains.length >= MAX_SEQUENCER_CHAINS) return current;
-      const chainId = `chain-${Date.now().toString(36)}`;
-      const steps = Array.from({ length: 16 }, (_v, idx) => makeStep(chainId, idx));
-      const chain: SequencerChainConfig = {
-        id: chainId,
-        name: `Chain ${current.chains.length + 1}`,
-        cycleLength: steps.length,
-        steps
-      };
-      return {
-        ...current,
-        chains: [...current.chains, chain],
-        activeChainId: chain.id
-      };
+function quantizeToMs(q: SnapshotQuantize, bpm: number): number {
+  const quarterMs = bpm > 0 ? (60000 / bpm) : 60000 / 120;
+  switch (q) {
+    case "immediate":
+      return 0;
+      case "bar4":
+        return quarterMs * 16;
+      default:
+        return quarterMs * 4;
+    }
+  }
+
+  function clearSnapshotTimer() {
+    if (snapshotTimerRef.current) {
+      window.clearTimeout(snapshotTimerRef.current);
+      snapshotTimerRef.current = null;
+    }
+  }
+
+  function triggerSnapshot(name: string) {
+    clearSnapshotTimer();
+    const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
+    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
+  const shouldDelay = snapshotMode === "commit" && qMs > 0;
+  const waitMs = shouldDelay ? qMs : qMs;
+    if (qMs === 0 || snapshotMode === "jump") {
+      setActiveSnapshot(name);
+      void sendSnapshotNow();
+      setPendingSnapshot(null);
+      return;
+    }
+    setPendingSnapshot(name);
+    snapshotTimerRef.current = window.setTimeout(() => {
+      setActiveSnapshot(name);
+      void sendSnapshotNow();
+      setPendingSnapshot(null);
+      snapshotTimerRef.current = null;
+    }, waitMs);
+  }
+
+  function playChainStep(idx: number) {
+    clearSnapshotTimer();
+    if (idx >= chainSteps.length) {
+      setChainPlaying(false);
+      setChainIndex(0);
+      return;
+    }
+    setChainIndex(idx);
+    triggerSnapshot(chainSteps[idx].snapshot);
+    const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
+    const delayMs = quantizeToMs(snapshotQuantize, effectiveBpm) * Math.max(1, chainSteps[idx].bars);
+    if (delayMs === 0) {
+      playChainStep(idx + 1);
+      return;
+    }
+    chainTimerRef.current = window.setTimeout(() => playChainStep(idx + 1), delayMs);
+  }
+
+  function startChain() {
+    if (chainSteps.length === 0) return;
+    if (chainTimerRef.current) {
+      window.clearTimeout(chainTimerRef.current);
+      chainTimerRef.current = null;
+    }
+    setChainPlaying(true);
+    playChainStep(0);
+  }
+
+  function stopChain() {
+    if (chainTimerRef.current) {
+      window.clearTimeout(chainTimerRef.current);
+      chainTimerRef.current = null;
+    }
+    setChainPlaying(false);
+    setChainIndex(0);
+    setPendingSnapshot(null);
+  }
+
+  function addChainStep() {
+    if (snapshots.length === 0) return;
+    const snapshot = activeSnapshot ?? snapshots[0];
+    setChainSteps((current) => [...current, { snapshot, bars: 4 }]);
+  }
+
+  function removeChainStep(index: number) {
+    setChainSteps((current) => current.filter((_, idx) => idx !== index));
+  }
+
+  function moveChainStep(from: number, to: number) {
+    setChainSteps((current) => {
+      if (to < 0 || to >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
     });
   }
 
-  function removeChain(id: string) {
-    setSequencer((current) => {
-      if (current.chains.length <= 1) return current;
-      const chains = current.chains.filter((c) => c.id !== id);
-      const activeChainId = current.activeChainId === id ? chains[0]?.id ?? null : current.activeChainId;
-      return { ...current, chains, activeChainId };
-    });
+  function updateChainBars(index: number, bars: number) {
+    setChainSteps((current) =>
+      current.map((step, idx) => (idx === index ? { ...step, bars: Math.max(1, Math.min(64, bars)) } : step))
+    );
   }
 
-  function updateChain(id: string, updater: (chain: SequencerChainConfig) => SequencerChainConfig) {
-    setSequencer((current) => {
-      const chains = current.chains.map((c) => (c.id === id ? updater(c) : c));
-      const activeChainId = chains.some((c) => c.id === current.activeChainId)
-        ? current.activeChainId
-        : chains[0]?.id ?? null;
-      return { ...current, chains, activeChainId };
-    });
-  }
+  const saveLabel =
+    saveStatus === "saving"
+      ? "Saving..."
+      : saveStatus === "saved"
+        ? "Saved"
+        : saveStatus === "error"
+          ? "Save error"
+          : "Idle";
 
-  function resizeChain(id: string, nextLength: number) {
-    const length = Math.min(Math.max(Math.round(nextLength), 1), MAX_SEQUENCER_STEPS);
-    updateChain(id, (chain) => {
-      let steps = chain.steps;
-      if (steps.length < length) {
-        const additions = Array.from({ length: length - steps.length }, (_v, idx) => makeStep(id, steps.length + idx));
-        steps = [...steps, ...additions];
-      } else if (steps.length > length) {
-        steps = steps.slice(0, length);
+  async function flushProjectNow() {
+    if (!midiApi) return;
+    setSaveStatus("saving");
+    await midiApi.setProjectState({
+      backendId: backends.find((b) => b.selected)?.id ?? null,
+      selectedIn,
+      selectedOut,
+      activeView,
+      selectedDeviceId,
+      devices,
+      routes,
+      controls,
+      selectedControlId,
+      ui: {
+        routeBuilder: {
+          forceChannelEnabled,
+          routeChannel,
+          allowNotes,
+          allowCc,
+          allowExpression,
+          allowTransport,
+          allowClock,
+          clockDiv
+        },
+        diagnostics: {
+          note,
+          ccValue
+        }
       }
-      return { ...chain, cycleLength: length, steps };
     });
+    await midiApi.flushProject();
+    setLastSavedAt(Date.now());
+    setSaveStatus("saved");
   }
 
-  function updateStep(chainId: string, stepId: string, partial: Partial<SequencerStepConfig>) {
-    updateChain(chainId, (chain) => ({
-      ...chain,
-      steps: chain.steps.map((s) => (s.id === stepId ? { ...s, ...partial } : s))
-    }));
-  }
+  const route = activeView;
+  const monitorRows = activity.slice(0, 12);
 
-  function updateStepMsg(chainId: string, stepId: string, partial: Partial<MidiMsg>) {
-    updateChain(chainId, (chain) => ({
-      ...chain,
-      steps: chain.steps.map((s) => {
-        if (s.id !== stepId) return s;
-        const base: MidiMsg = s.msg && s.msg.t === "noteOn" ? s.msg : { t: "noteOn", ch: s.channel ?? 1, note: 60, vel: 100 };
-        return { ...s, msg: { ...base, ...(partial as any) } };
-      })
-    }));
-  }
+  return (
+    <div style={styles.window}>
+      <AppChrome>
+        <TopStatusBar
+          saveLabel={saveLabel}
+          lastSavedAt={lastSavedAt}
+          onRefresh={refreshPorts}
+          onReset={resetProject}
+          onSave={flushProjectNow}
+          midiReady={Boolean(midiApi)}
+          loadingPorts={loadingPorts}
+          tempo={useClockSync && clockBpm ? clockBpm : tempoBpm}
+          onTempoChange={(bpm) => {
+            setTempoBpm(bpm);
+            if (useClockSync) setUseClockSync(false);
+          }}
+          clockBpm={clockBpm}
+          useClockSync={useClockSync}
+          onToggleClockSync={setUseClockSync}
+          followClockStart={followClockStart}
+          onToggleFollowClockStart={setFollowClockStart}
+          backendLabel={backends.find((b) => b.selected)?.label ?? "No backend"}
+          inputLabel={
+            selectedIn
+              ? formatPortLabel(ports.inputs.find((p) => p.id === selectedIn)?.name ?? selectedIn)
+              : "No input"
+          }
+          outputLabel={
+            selectedOut
+              ? formatPortLabel(ports.outputs.find((p) => p.id === selectedOut)?.name ?? selectedOut)
+              : "No output"
+          }
+        />
+        <BodySplitPane>
+          <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} />
+          <MainContentArea
+            route={route}
+            ports={ports}
+            devices={devices}
+            selectedIn={selectedIn}
+            selectedOut={selectedOut}
+            onSelectIn={setSelectedIn}
+            onSelectOut={setSelectedOut}
+            diagMessage={diagMessage}
+            diagRunning={diagRunning}
+            onRunDiagnostics={runDiagnostics}
+            onQuickStart={quickStart}
+            loadingPorts={loadingPorts}
+            logCapReached={logCapReached}
+            monitorRows={monitorRows}
+            clearLog={clearLog}
+            controls={controls}
+            selectedControl={selectedControl}
+            selectedControlId={selectedControlId}
+            setSelectedControlId={setSelectedControlId}
+            updateSlot={updateSlot}
+            learnStatus={learnStatus}
+            onLearn={(slotIndex) => selectedControl && startLearn(selectedControl.id, slotIndex)}
+            onCancelLearn={cancelLearn}
+            note={note}
+            ccValue={ccValue}
+            onSendNote={sendTestNote}
+            onSendCc={sendCc}
+            onQuickTest={(portId, ch) => sendQuickNote(portId, ch, note)}
+            onQuickCc={(portId, ch, ccNum, val) => sendQuickCc(portId, ch, ccNum, val)}
+            onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
+            onSendSnapshot={sendSnapshotNow}
+            onAddDeviceRoutes={addDeviceRoutes}
+            snapshots={snapshots}
+            activeSnapshot={activeSnapshot}
+            onSelectSnapshot={triggerSnapshot}
+            pendingSnapshot={pendingSnapshot}
+            snapshotQuantize={snapshotQuantize}
+            snapshotMode={snapshotMode}
+            onChangeSnapshotQuantize={setSnapshotQuantize}
+            onChangeSnapshotMode={setSnapshotMode}
+            snapshotFadeMs={snapshotFadeMs}
+            onChangeSnapshotFade={(ms) => setSnapshotFadeMs(Math.max(0, ms))}
+            chainSteps={chainSteps}
+            chainPlaying={chainPlaying}
+            chainIndex={chainIndex}
+            onStartChain={startChain}
+            onStopChain={stopChain}
+            onAddChainStep={addChainStep}
+            onRemoveChainStep={removeChainStep}
+            onMoveChainStep={moveChainStep}
+            onUpdateChainBars={updateChainBars}
+          />
+        </BodySplitPane>
+        <BottomUtilityBar
+          midiReady={Boolean(selectedOut)}
+          saveLabel={saveLabel}
+          version="v0.8.2-beta"
+          logCapReached={logCapReached}
+        />
+      </AppChrome>
+    </div>
+  );
+}
 
-  function setActiveChain(id: string) {
-    setSequencer((current) => ({ ...current, activeChainId: id }));
-  }
+type NavRoute = AppView;
 
-  function setTransport(partial: Partial<SequencerProjectState["transport"]>) {
-    setSequencer((current) => ({ ...current, transport: { ...current.transport, ...partial } }));
-  }
+function AppChrome({ children }: { children: ReactNode }) {
+  return <div style={styles.chrome}>{children}</div>;
+}
 
-  function setWorld(partial: Partial<SequencerProjectState["world"]>) {
-    setSequencer((current) => ({ ...current, world: { ...current.world, ...partial } }));
+function TopStatusBar({
+  saveLabel,
+  lastSavedAt,
+  onRefresh,
+  onReset,
+  onSave,
+  midiReady,
+  loadingPorts,
+  tempo,
+  onTempoChange,
+  clockBpm,
+  useClockSync,
+  onToggleClockSync,
+  followClockStart,
+  onToggleFollowClockStart,
+  backendLabel,
+  inputLabel,
+  outputLabel
+}: {
+  saveLabel: string;
+  lastSavedAt: number | null;
+  onRefresh: () => void;
+  onReset: () => void;
+  onSave: () => void;
+  midiReady: boolean;
+  loadingPorts: boolean;
+  tempo: number;
+  onTempoChange: (bpm: number) => void;
+  clockBpm: number | null;
+  useClockSync: boolean;
+  onToggleClockSync: (next: boolean) => void;
+  followClockStart: boolean;
+  onToggleFollowClockStart: (next: boolean) => void;
+  backendLabel: string;
+  inputLabel: string;
+  outputLabel: string;
+}) {
+  return (
+    <>
+      <div style={styles.topBar}>
+        <ProjectBadge saveLabel={saveLabel} lastSavedAt={lastSavedAt} />
+        <TransportCluster
+          tempo={tempo}
+          onTempoChange={onTempoChange}
+          clockBpm={clockBpm}
+          useClockSync={useClockSync}
+          onToggleClockSync={onToggleClockSync}
+          followClockStart={followClockStart}
+          onToggleFollowClockStart={onToggleFollowClockStart}
+        />
+        <CycleCluster />
+        <ConnectionCluster midiReady={midiReady} />
+        <GlobalActions onRefresh={onRefresh} onReset={onReset} onSave={onSave} loading={loadingPorts} />
+      </div>
+      <StatusStrip
+        backendLabel={backendLabel}
+        inputLabel={inputLabel}
+        outputLabel={outputLabel}
+        clockLabel={useClockSync ? `Clock: ${clockBpm?.toFixed(1) ?? "??"} bpm` : "Clock: Manual"}
+      />
+    </>
+  );
+}
+
+function ProjectBadge({ saveLabel, lastSavedAt }: { saveLabel: string; lastSavedAt: number | null }) {
+  return (
+    <div style={styles.cluster}>
+      <div style={styles.badgeTitle}>Project</div>
+      <div style={styles.badgeValue}>
+        <span style={styles.valueText}>Live_Set_01</span>
+        <span style={{ ...styles.pill, color: "#35c96a" }}>{saveLabel}</span>
+        {lastSavedAt ? <span style={styles.muted}>Saved {new Date(lastSavedAt).toLocaleTimeString()}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function TransportCluster({
+  tempo,
+  onTempoChange,
+  clockBpm,
+  useClockSync,
+  onToggleClockSync,
+  followClockStart,
+  onToggleFollowClockStart
+}: {
+  tempo: number;
+  onTempoChange: (bpm: number) => void;
+  clockBpm: number | null;
+  useClockSync: boolean;
+  onToggleClockSync: (next: boolean) => void;
+  followClockStart: boolean;
+  onToggleFollowClockStart: (next: boolean) => void;
+}) {
+  return (
+    <div style={styles.cluster}>
+      <div style={styles.badgeTitle}>Transport</div>
+      <div style={styles.row}>
+        <div style={styles.kpi}>{tempo.toFixed(1)}</div>
+        <div style={styles.row}>
+          <button style={styles.btnTiny} onClick={() => onTempoChange(Math.max(20, tempo - 1))}>
+            -
+          </button>
+          <button style={styles.btnTiny} onClick={() => onTempoChange(Math.min(300, tempo + 1))}>
+            +
+          </button>
+        </div>
+        <label style={styles.toggleRow}>
+          <input type="checkbox" checked={useClockSync} onChange={(e) => onToggleClockSync(e.target.checked)} />
+          <span style={styles.muted}>Follow MIDI Clock</span>
+        </label>
+        <label style={styles.toggleRow}>
+          <input type="checkbox" checked={followClockStart} onChange={(e) => onToggleFollowClockStart(e.target.checked)} />
+          <span style={styles.muted}>Clock start/stop drives chain</span>
+        </label>
+        {clockBpm ? <span style={styles.muted}>Clock BPM: {clockBpm.toFixed(1)}</span> : null}
+        <button style={styles.btnPrimary}>
+          <Play size={14} fill="currentColor" />
+        </button>
+        <button style={styles.btnSecondary}>
+          <Square size={14} fill="currentColor" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CycleCluster() {
+  return (
+    <div style={styles.cluster}>
+      <div style={styles.badgeTitle}>Cycle Control</div>
+      <div style={styles.row}>
+        <div style={styles.kpi}>8</div>
+        <select style={styles.select} defaultValue="8 Bars">
+          <option>1 Bar</option>
+          <option>4 Bars</option>
+          <option>8 Bars</option>
+        </select>
+        <select style={styles.select} defaultValue="1 Bar Quant">
+          <option>1/4 Quant</option>
+          <option>1 Bar Quant</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function ConnectionCluster({ midiReady }: { midiReady: boolean }) {
+  return (
+    <div style={styles.cluster}>
+      <div style={styles.badgeTitle}>System</div>
+      <div style={styles.row}>
+        <div style={styles.pillRow}>
+          <div style={{ ...styles.dot, backgroundColor: midiReady ? "#35c96a" : "#8b0000" }} />
+          <span style={styles.valueText}>MIDI</span>
+        </div>
+        <div style={styles.pillRow}>
+          <div style={{ ...styles.dot, backgroundColor: "#35c96a" }} />
+          <span style={styles.valueText}>Clock</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusStrip({
+  backendLabel,
+  inputLabel,
+  outputLabel,
+  clockLabel
+}: {
+  backendLabel: string;
+  inputLabel: string;
+  outputLabel: string;
+  clockLabel: string;
+}) {
+  return (
+    <div style={{ ...styles.bottomBar, backgroundColor: "#0f0f0f", borderTop: "1px solid #1e1e1e" }}>
+      <div style={styles.row}>
+        <span style={styles.muted}>Backend:</span> <span style={styles.valueText}>{backendLabel}</span>
+      </div>
+      <div style={styles.row}>
+        <span style={styles.muted}>In:</span> <span style={styles.valueText}>{inputLabel}</span>
+        <span style={styles.muted}>Out:</span> <span style={styles.valueText}>{outputLabel}</span>
+      </div>
+      <div style={styles.row}>
+        <span style={styles.muted}>{clockLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function GlobalActions({
+  onRefresh,
+  onReset,
+  onSave,
+  loading
+}: {
+  onRefresh: () => void;
+  onReset: () => void;
+  onSave: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div style={{ ...styles.cluster, marginLeft: "auto" }}>
+      <div style={styles.badgeTitle}>Actions</div>
+      <div style={styles.row}>
+        <button style={styles.btnSecondary} onClick={onRefresh} disabled={loading}>
+          <RefreshCw size={14} /> {loading ? "Scanning..." : "Refresh"}
+        </button>
+        <button style={styles.btnSecondary} onClick={onReset}>
+          <RotateCcw size={14} />
+        </button>
+        <button style={styles.btnPrimary} onClick={onSave}>
+          <Save size={14} /> Save
+        </button>
+        <button style={styles.btnSecondary}>
+          <HelpCircle size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BodySplitPane({ children }: { children: ReactNode }) {
+  return <div style={styles.body}>{children}</div>;
+}
+
+function LeftNavRail({ route, onChangeRoute }: { route: NavRoute; onChangeRoute: (route: NavRoute) => void }) {
+  const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
+    { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
+    { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
+    { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
+    { id: "chains", label: "Chains", icon: <LinkIcon size={18} /> },
+    { id: "monitor", label: "Monitor", icon: <Activity size={18} /> },
+    { id: "settings", label: "Settings", icon: <Settings size={18} /> }
+  ];
+
+  return (
+    <div style={styles.nav}>
+      <div style={styles.navHeader}>
+        <div style={styles.logo}>MIDI PERFORMER</div>
+        <select style={styles.selectWide} defaultValue="Default Session">
+          <option>Default Session</option>
+          <option>Studio Live B</option>
+        </select>
+      </div>
+      <div style={styles.navSection}>
+        {items.map((it) => (
+          <button
+            key={it.id}
+            onClick={() => onChangeRoute(it.id)}
+            style={{
+              ...styles.navItem,
+              backgroundColor: route === it.id ? "#103553" : "transparent",
+              color: route === it.id ? "#e8f6ff" : "#9aa3ad",
+              borderLeft: route === it.id ? "4px solid #19b0d7" : "4px solid transparent",
+              paddingLeft: route === it.id ? "16px" : "20px",
+              borderRadius: route === it.id ? "2px" : "0px"
+            }}
+          >
+            {it.icon} {it.label}
+          </button>
+        ))}
+      </div>
+      <div style={styles.navFooter}>
+        <button style={styles.btnDanger}>MIDI PANIC</button>
+        <label style={styles.toggleRow}>
+          <input type="checkbox" defaultChecked />
+          <span style={styles.muted}>Safe Mode</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function MainContentArea(props: {
+  route: NavRoute;
+  ports: MidiPorts;
+  devices: DeviceConfig[];
+  selectedIn: string | null;
+  selectedOut: string | null;
+  onSelectIn: (id: string | null) => void;
+  onSelectOut: (id: string | null) => void;
+  diagMessage: string | null;
+  diagRunning: boolean;
+  onRunDiagnostics: () => void;
+  onQuickStart: () => void;
+  loadingPorts: boolean;
+  onQuickTest: (portId: string | null, channel: number) => void;
+  onQuickCc: (portId: string | null, channel: number, cc: number, val: number) => void;
+  onQuickProgram: (portId: string | null, channel: number, program: number) => void;
+  onSendSnapshot: () => void;
+  onAddDeviceRoutes: () => void;
+  snapshots: string[];
+  activeSnapshot: string | null;
+  onSelectSnapshot: (name: string) => void;
+  pendingSnapshot: string | null;
+  snapshotQuantize: SnapshotQuantize;
+  snapshotMode: SnapshotMode;
+  onChangeSnapshotQuantize: (q: SnapshotQuantize) => void;
+  onChangeSnapshotMode: (m: SnapshotMode) => void;
+  snapshotFadeMs: number;
+  onChangeSnapshotFade: (ms: number) => void;
+  chainSteps: ChainStep[];
+  chainPlaying: boolean;
+  chainIndex: number;
+  onStartChain: () => void;
+  onStopChain: () => void;
+  onAddChainStep: () => void;
+  onRemoveChainStep: (index: number) => void;
+  onMoveChainStep: (from: number, to: number) => void;
+  onUpdateChainBars: (index: number, bars: number) => void;
+  logCapReached: boolean;
+  monitorRows: { _rowId: string; ts: number; src: MidiPortInfo; label: string }[];
+  clearLog: () => void;
+  controls: ControlElement[];
+  selectedControl: ControlElement | undefined;
+  selectedControlId: string | null;
+  setSelectedControlId: (id: string) => void;
+  updateSlot: (controlId: string, slotIndex: number, partial: Partial<MappingSlot>) => void;
+  learnStatus: "idle" | "listening" | "captured" | "timeout";
+  onLearn: (slotIndex: number) => void;
+  onCancelLearn: () => void;
+  note: number;
+  ccValue: number;
+  onSendNote: () => void;
+  onSendCc: () => void;
+}) {
+  return (
+    <div style={styles.content}>
+      <RouteOutlet {...props} />
+    </div>
+  );
+}
+
+function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) {
+  switch (route) {
+    case "setup":
+      return (
+        <SetupPage
+          ports={rest.ports}
+          devices={rest.devices}
+          selectedIn={rest.selectedIn}
+          selectedOut={rest.selectedOut}
+          onSelectIn={rest.onSelectIn}
+          onSelectOut={rest.onSelectOut}
+          diagMessage={rest.diagMessage}
+          diagRunning={rest.diagRunning}
+          onRunDiagnostics={rest.onRunDiagnostics}
+          onQuickStart={rest.onQuickStart}
+          loadingPorts={rest.loadingPorts}
+          onQuickTest={rest.onQuickTest}
+          onQuickCc={rest.onQuickCc}
+          onQuickProgram={rest.onQuickProgram}
+          onSendSnapshot={rest.onSendSnapshot}
+          onAddDeviceRoutes={rest.onAddDeviceRoutes}
+        />
+      );
+    case "mapping":
+      return (
+        <MappingPage
+          controls={rest.controls}
+          selectedControl={rest.selectedControl}
+          selectedControlId={rest.selectedControlId}
+          setSelectedControlId={rest.setSelectedControlId}
+          updateSlot={rest.updateSlot}
+          learnStatus={rest.learnStatus}
+          onLearn={rest.onLearn}
+          onCancelLearn={rest.onCancelLearn}
+          onSendNote={rest.onSendNote}
+          onSendCc={rest.onSendCc}
+          note={rest.note}
+          ccValue={rest.ccValue}
+          devices={rest.devices}
+        />
+      );
+    case "snapshots":
+      return (
+        <SnapshotsPage
+          snapshots={rest.snapshots}
+          activeSnapshot={rest.activeSnapshot}
+          pendingSnapshot={rest.pendingSnapshot}
+          onSelectSnapshot={rest.onSelectSnapshot}
+          snapshotQuantize={rest.snapshotQuantize}
+          snapshotMode={rest.snapshotMode}
+          onChangeSnapshotQuantize={rest.onChangeSnapshotQuantize}
+          onChangeSnapshotMode={rest.onChangeSnapshotMode}
+          snapshotFadeMs={rest.snapshotFadeMs}
+          onChangeSnapshotFade={rest.onChangeSnapshotFade}
+        />
+      );
+    case "chains":
+      return (
+        <ChainsPage
+          chainSteps={rest.chainSteps}
+          playing={rest.chainPlaying}
+          currentIndex={rest.chainIndex}
+          quantize={rest.snapshotQuantize}
+          onStart={rest.onStartChain}
+          onStop={rest.onStopChain}
+          onAddStep={rest.onAddChainStep}
+          onRemoveStep={rest.onRemoveChainStep}
+          onMoveStep={rest.onMoveChainStep}
+          onUpdateBars={rest.onUpdateChainBars}
+        />
+      );
+    case "monitor":
+      return <MonitorPage monitorRows={rest.monitorRows} logCapReached={rest.logCapReached} clearLog={rest.clearLog} />;
+    case "settings":
+      return (
+        <SettingsPage
+          selectedIn={rest.selectedIn}
+          selectedOut={rest.selectedOut}
+          onSelectIn={rest.onSelectIn}
+          onSelectOut={rest.onSelectOut}
+        />
+      );
+    default:
+      return (
+        <SnapshotsPage
+          snapshots={rest.snapshots}
+          activeSnapshot={rest.activeSnapshot}
+          pendingSnapshot={rest.pendingSnapshot}
+          onSelectSnapshot={rest.onSelectSnapshot}
+          snapshotQuantize={rest.snapshotQuantize}
+          snapshotMode={rest.snapshotMode}
+          onChangeSnapshotQuantize={rest.onChangeSnapshotQuantize}
+          onChangeSnapshotMode={rest.onChangeSnapshotMode}
+          snapshotFadeMs={rest.snapshotFadeMs}
+          onChangeSnapshotFade={rest.onChangeSnapshotFade}
+        />
+      );
+  }
+}
+
+function Page({ children }: { children: ReactNode }) {
+  return <div style={styles.page}>{children}</div>;
+}
+
+function PageHeader({ title, right }: { title: string; right?: ReactNode }) {
+  return (
+    <div style={styles.pageHeader}>
+      <h1 style={styles.pageTitle}>{title}</h1>
+      <div>{right}</div>
+    </div>
+  );
+}
+
+function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+  return (
+    <div style={styles.panel}>
+      <div style={styles.panelHeader}>
+        <span style={styles.panelTitle}>{title}</span>
+        {right && <div>{right}</div>}
+      </div>
+      <div style={styles.panelContent}>{children}</div>
+    </div>
+  );
+}
+
+function SetupPage({
+  ports,
+  devices,
+  selectedIn,
+  selectedOut,
+  onSelectIn,
+  onSelectOut,
+  diagMessage,
+  diagRunning,
+  onRunDiagnostics,
+  onQuickStart,
+  loadingPorts,
+  onQuickTest,
+  onQuickCc,
+  onQuickProgram,
+  onSendSnapshot,
+  onAddDeviceRoutes
+}: {
+  ports: MidiPorts;
+  devices: DeviceConfig[];
+  selectedIn: string | null;
+  selectedOut: string | null;
+  onSelectIn: (id: string | null) => void;
+  onSelectOut: (id: string | null) => void;
+  diagMessage: string | null;
+  diagRunning: boolean;
+  onRunDiagnostics: () => void;
+  onQuickStart: () => void;
+  loadingPorts: boolean;
+  onQuickTest: (portId: string | null, channel: number) => void;
+  onQuickCc: (portId: string | null, channel: number, cc: number, val: number) => void;
+  onQuickProgram: (portId: string | null, channel: number, program: number) => void;
+  onSendSnapshot: () => void;
+  onAddDeviceRoutes: () => void;
+}) {
+  const selectedInLabel =
+    selectedIn ? formatPortLabel(ports.inputs.find((p) => p.id === selectedIn)?.name ?? selectedIn) : "Not selected";
+  const selectedOutLabel =
+    selectedOut ? formatPortLabel(ports.outputs.find((p) => p.id === selectedOut)?.name ?? selectedOut) : "Not selected";
+  const [quickCc, setQuickCc] = useState(74);
+  const [quickVal, setQuickVal] = useState(100);
+  const [quickProgram, setQuickProgram] = useState(0);
+  const preferredOut = selectedOut ?? devices.find((d) => d.outputId)?.outputId ?? ports.outputs[0]?.id ?? null;
+  const preferredChannel = devices.find((d) => d.outputId === preferredOut)?.channel ?? 1;
+
+  return (
+    <Page>
+      <PageHeader
+        title="Hardware Setup"
+        right={
+          <div style={styles.row}>
+            <button style={styles.btnPrimary} onClick={onQuickStart} disabled={loadingPorts}>
+              Plug & Go
+            </button>
+            <button style={styles.btnSecondary} onClick={onAddDeviceRoutes} disabled={loadingPorts}>
+              Routes for Devices
+            </button>
+            <button style={styles.btnSecondary} disabled={loadingPorts}>
+              Auto Scan
+            </button>
+          </div>
+        }
+      />
+      <div style={styles.pageGrid2}>
+        <Panel title="Connected MIDI Devices">
+          <div style={styles.table}>
+            {devices.map((dev, idx) => (
+              <div key={dev.id} style={styles.tableRow}>
+                <span style={styles.cellSmall}>OUT {idx + 1}</span>
+                <select style={styles.selectWide} value={dev.outputId ?? ""} onChange={(e) => onSelectOut(e.target.value)}>
+                  <option value="">Select output</option>
+                  {ports.outputs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {formatPortLabel(p.name)}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ ...styles.dot, backgroundColor: selectedOut === dev.outputId ? "#35c96a" : "#444" }} />
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="Configuration">
+          <div style={styles.card}>
+            <p style={styles.muted}>Input: {selectedInLabel}</p>
+            <p style={styles.muted}>Output: {selectedOutLabel}</p>
+            <p style={styles.muted}>Buffer Size: 128 samples</p>
+          </div>
+          <div style={{ ...styles.card, backgroundColor: "#181818" }}>
+            <strong>Onboarding</strong>
+            <ol style={{ margin: "8px 0 0 16px", color: "#888", padding: 0 }}>
+              <li>Select backend</li>
+              <li>Pick input/output</li>
+              <li>Click Plug & Go</li>
+              <li>Hit Send Note to confirm sound</li>
+            </ol>
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <select
+              style={styles.selectWide}
+              value={selectedOut ?? ""}
+              onChange={(e) => onSelectOut(e.target.value || null)}
+            >
+              <option value="">Select output</option>
+              {ports.outputs.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {formatPortLabel(p.name)}
+                </option>
+              ))}
+            </select>
+            <select
+              style={styles.selectWide}
+              value={selectedIn ?? ""}
+              onChange={(e) => onSelectIn(e.target.value || null)}
+            >
+              <option value="">Select input</option>
+              {ports.inputs.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {formatPortLabel(p.name)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ height: "10px" }} />
+          <button style={styles.btnPrimary} onClick={onRunDiagnostics} disabled={diagRunning || !selectedOut}>
+            {diagRunning ? "Testing..." : "Run Diagnostics"}
+          </button>
+          {diagMessage ? <p style={styles.muted}>{diagMessage}</p> : null}
+        </Panel>
+      </div>
+      <div style={styles.pageGrid2}>
+        <Panel title="Quick Send (device sanity)">
+          <p style={styles.muted}>Sends directly to the selected output (or first device with an output).</p>
+          <div style={styles.row}>
+            <button style={styles.btnSecondary} onClick={() => onQuickTest(preferredOut, preferredChannel)}>
+              Send Note (C4)
+            </button>
+            <button
+              style={styles.btnSecondary}
+              onClick={() => onQuickCc(preferredOut, preferredChannel, quickCc, quickVal)}
+            >
+              Send CC
+            </button>
+            <button style={styles.btnSecondary} onClick={() => onQuickProgram(preferredOut, preferredChannel, quickProgram)}>
+              Send PC
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+            <label style={{ ...styles.row, flex: 1 }}>
+              <span style={styles.muted}>CC</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={quickCc}
+                onChange={(e) => setQuickCc(clampMidi(Number(e.target.value)))}
+              />
+            </label>
+            <label style={{ ...styles.row, flex: 1 }}>
+              <span style={styles.muted}>Value</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={quickVal}
+                onChange={(e) => setQuickVal(clampMidi(Number(e.target.value)))}
+              />
+            </label>
+            <label style={{ ...styles.row, flex: 1 }}>
+              <span style={styles.muted}>Program</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={quickProgram}
+                onChange={(e) => setQuickProgram(clampMidi(Number(e.target.value)))}
+              />
+            </label>
+          </div>
+        </Panel>
+        <Panel title="Snapshot Send">
+          <p style={styles.muted}>Send current mapped CC slots for bound devices (light burst spacing).</p>
+          <button style={styles.btnPrimary} onClick={onSendSnapshot}>
+            Send Snapshot Now
+          </button>
+        </Panel>
+      </div>
+    </Page>
+  );
+}
+
+function MappingPage({
+  controls,
+  selectedControl,
+  selectedControlId,
+  setSelectedControlId,
+  updateSlot,
+  learnStatus,
+  onLearn,
+  onCancelLearn,
+  onSendNote,
+  onSendCc,
+  note,
+  ccValue,
+  devices
+}: {
+  controls: ControlElement[];
+  selectedControl: ControlElement | undefined;
+  selectedControlId: string | null;
+  setSelectedControlId: (id: string) => void;
+  updateSlot: (controlId: string, slotIndex: number, partial: Partial<MappingSlot>) => void;
+  learnStatus: "idle" | "listening" | "captured" | "timeout";
+  onLearn: (slotIndex: number) => void;
+  onCancelLearn: () => void;
+  onSendNote: () => void;
+  onSendCc: () => void;
+  note: number;
+  ccValue: number;
+  devices: DeviceConfig[];
+}) {
+  const targetDevice = devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ?? devices[0];
+  const targetProfile = targetDevice ? getInstrumentProfile(targetDevice.instrumentId) : null;
+
+  function applyPreset(ccNumber: number, slotIndex = 0) {
+    if (!selectedControl) return;
+    updateSlot(selectedControl.id, slotIndex, {
+      kind: "cc",
+      cc: clampMidi(ccNumber),
+      enabled: true,
+      targetDeviceId: targetDevice?.id ?? null,
+      channel: clampChannel(targetDevice?.channel ?? 1)
+    });
   }
 
   return (
-    <div className="page">
-      {!midiApi ? (
-        <div className="panel">
-          <h2>Waiting for Electron preload</h2>
-          <p className="muted">
-            This page must run inside the Electron app. Start with <code>corepack pnpm -C apps/desktop dev</code> and
-            use the Electron window instead of opening the Vite URL in a browser.
-          </p>
-        </div>
-      ) : null}
-
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Midi Muncher</p>
-          <h1>Performance hub</h1>
-          <p className="lede">Select backend, define devices, route MIDI, and monitor traffic.</p>
-        </div>
-        <div className="hero-actions">
-          <span
-            className={`pill ${saveStatus}`}
-            title={lastSavedAt ? `Last saved: ${new Date(lastSavedAt).toLocaleTimeString()}` : undefined}
+    <Page>
+      <PageHeader
+        title="MIDI Mapping"
+        right={
+          <div style={styles.row}>
+            <button style={styles.btnPrimary} onClick={() => onLearn(0)}>
+              <Zap size={14} /> Learn Slot
+            </button>
+            <button style={styles.btnSecondary} onClick={onCancelLearn}>
+              Cancel
+            </button>
+            <span style={styles.pill}>Status: {learnStatus}</span>
+          </div>
+        }
+      />
+      <div style={styles.pageGrid2}>
+        <Panel title="Source Controls">
+          <input style={styles.input} placeholder="Filter mappings..." />
+          <div
+            style={{
+              height: "200px",
+              marginTop: "12px",
+              border: "1px solid #333",
+              borderRadius: "4px",
+              overflowY: "auto",
+              padding: "10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px"
+            }}
           >
-            {saveStatus === "idle" ? "Not saved yet" : saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save error"}
-          </span>
-          <button className="ghost" onClick={refreshPorts} disabled={loadingPorts}>
-            {loadingPorts ? "Scanning..." : "Refresh devices"}
-          </button>
-          <button className="ghost" onClick={resetProject} disabled={!projectHydrated}>
-            Reset project
-          </button>
-          <nav className="nav">
-            <button className={activeView === "setup" ? "ghost active" : "ghost"} onClick={() => setActiveView("setup")}>
-              Setup
-            </button>
-            <button className={activeView === "routes" ? "ghost active" : "ghost"} onClick={() => setActiveView("routes")}>
-              Routing
-            </button>
-            <button
-              className={activeView === "mapping" ? "ghost active" : "ghost"}
-              onClick={() => setActiveView("mapping")}
-            >
-              Mapping
-            </button>
-            <button
-              className={activeView === "snapshots" ? "ghost active" : "ghost"}
-              onClick={() => setActiveView("snapshots")}
-            >
-              Snapshots
-            </button>
-            <button className={activeView === "monitor" ? "ghost active" : "ghost"} onClick={() => setActiveView("monitor")}>
-              Monitor
-            </button>
-            <button className={activeView === "help" ? "ghost active" : "ghost"} onClick={() => setActiveView("help")}>
-              Help
-            </button>
-          </nav>
-        </div>
-      </header>
-
-      {activeView === "setup" ? (
-        <>
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Devices & Backend</h2>
-              <p>Pick backend, set up to 8 devices, and choose defaults.</p>
-            </div>
-            <div className="grid two">
-              <div className="card">
-                <div className="card-head">
-                  <h3>MIDI backend</h3>
-                </div>
-                {backends.length === 0 ? (
-                  <p className="muted">No backend info yet.</p>
-                ) : (
-                  <select
-                    value={backends.find((b) => b.selected)?.id ?? ""}
-                    onChange={(e) => selectBackend(e.target.value)}
-                  >
-                    {backends.map((b) => (
-                      <option key={b.id} value={b.id} disabled={!b.available}>
-                        {b.label} {b.available ? "" : "(unavailable)"}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>Diagnostics</h3>
-                </div>
-                <p className="muted">Sends a test note to the selected output.</p>
-                <button onClick={runDiagnostics} disabled={!selectedOut || diagRunning}>
-                  {diagRunning ? "Testing..." : "Run diagnostics"}
+            {controls.map((control) => (
+              <button
+                key={control.id}
+                style={{
+                  ...styles.navItem,
+                  backgroundColor: control.id === selectedControlId ? "#0078d422" : "transparent",
+                  color: control.id === selectedControlId ? "#fff" : "#888"
+                }}
+                onClick={() => setSelectedControlId(control.id)}
+              >
+                <CheckCircle2 size={14} /> {control.label}
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <Panel
+          title={`Targets ${selectedControl ? `(${selectedControl.label})` : ""}`}
+          right={
+            <div style={styles.row}>
+              {targetProfile ? (
+                <button
+                  style={styles.btnSecondary}
+                  onClick={() => applyPreset(targetProfile.cc[0]?.cc ?? 74)}
+                  disabled={!selectedControl}
+                >
+                  Quick-assign {targetProfile.cc[0]?.label ?? "Cutoff"}
                 </button>
-                {diagMessage ? <p className="muted">{diagMessage}</p> : null}
+              ) : null}
+              <button style={styles.btnSecondary}>Add Target Slot</button>
+            </div>
+          }
+        >
+          <div style={styles.table}>
+            {(selectedControl ? selectedControl.slots.slice(0, 3) : []).map((slot, idx) => (
+              <div key={idx} style={styles.tableRow}>
+                <span style={styles.cellSmall}>S{idx + 1}</span>
+                <span style={styles.valueText}>{slot.kind.toUpperCase()}</span>
+                <span style={styles.muted}>{slot.kind === "cc" ? `CC ${slot.cc ?? "?"}` : slot.kind}</span>
+                <input style={styles.inputNarrow} defaultValue={slot.min ?? 0} />
+                <input style={styles.inputNarrow} defaultValue={slot.max ?? 127} />
               </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>OXI transport</h3>
-                </div>
-                <p className="muted">Sends CC 105/106/107 to the selected output (requires “CC Transport Msgs” on OXI).</p>
-                <div className="chips">
-                  <button className="ghost" onClick={() => sendOxiTransport(106)} disabled={!selectedOut}>
-                    Play (CC 106)
-                  </button>
-                  <button className="ghost" onClick={() => sendOxiTransport(105)} disabled={!selectedOut}>
-                    Stop (CC 105)
-                  </button>
-                  <button className="ghost" onClick={() => sendOxiTransport(107)} disabled={!selectedOut}>
-                    Record (CC 107)
-                  </button>
-                </div>
-              </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>OXI quick setup</h3>
-                </div>
-                {(() => {
-                  const oxiIn = ports.inputs.filter((p) => analyzeOxiPortName(p.name).isOxi).sort(sortPortsWithOxiFirst);
-                  const oxiOut = ports.outputs.filter((p) => analyzeOxiPortName(p.name).isOxi).sort(sortPortsWithOxiFirst);
-                  const preferredIn = oxiIn[0]?.id ?? null;
-                  const preferredOut = oxiOut[0]?.id ?? null;
-
-                  if (oxiIn.length === 0 && oxiOut.length === 0) {
-                    return (
-                      <p className="muted">
-                        No OXI ports detected yet. Set OXI USB mode to <strong>Device</strong>, then click Refresh devices.
-                      </p>
-                    );
-                  }
-
-                  return (
-                    <>
-                      {oxiOut.length > 0 ? (
-                        <p className="muted">Detected OXI outputs: {oxiOut.map((p) => formatPortLabel(p.name)).join(" • ")}</p>
-                      ) : (
-                        <p className="muted">No OXI outputs detected (needed to send notes/CC).</p>
-                      )}
-                      {oxiIn.length > 0 ? (
-                        <p className="muted">Detected OXI inputs: {oxiIn.map((p) => formatPortLabel(p.name)).join(" • ")}</p>
-                      ) : (
-                        <p className="muted">No OXI inputs detected (optional, used for monitoring).</p>
-                      )}
-                      <div className="chips">
-                        <button className="ghost" onClick={() => setSelectedOut(preferredOut)} disabled={!preferredOut}>
-                          Use OXI output
-                        </button>
-                        <button className="ghost" onClick={() => setSelectedIn(preferredIn)} disabled={!preferredIn}>
-                          Use OXI input
-                        </button>
-                      </div>
-                      <p className="muted">
-                        Split tip: when OXI Split is enabled, you should see multiple OXI ports (A/B/C). Midimuncher labels these
-                        as OXI A/B/C based on the port name.
-                      </p>
-                    </>
-                  );
-                })()}
-              </div>
-              <DeviceSelect
-                title="Input (monitor)"
-                ports={ports.inputs}
-                selectedId={selectedIn}
-                onSelect={setSelectedIn}
-                emptyLabel="No MIDI inputs detected"
-              />
-              <DeviceSelect
-                title="Output (send)"
-                ports={ports.outputs}
-                selectedId={selectedOut}
-                onSelect={setSelectedOut}
-                emptyLabel="No MIDI outputs detected"
-              />
-              <div className="card">
-                <div className="card-head">
-                  <h3>Devices</h3>
-                  <span className="pill">
-                    {devices.length}/{MAX_DEVICES}
-                  </span>
-                </div>
-                {devices.length === 0 ? <p className="muted">Add devices to mirror your rig.</p> : null}
-                <div className="hint">
-                  <p className="muted">
-                    OXI tip: If you enable OXI Split in OXI MIDI settings, Windows should expose multiple OXI ports (A/B/C).
-                    Bind each device output to the desired OXI port to access more channels.
-                  </p>
-                  <p className="muted">
-                    Loop tip: If you hear double-triggering, disable OXI USB Thru so the app is the only router.
-                  </p>
-                </div>
-                <div className="stack">
-                  {devices.map((d) => (
-                    <div key={d.id} className="device-row">
-                      <div className="device-header">
-                        <input
-                          type="text"
-                          value={d.name}
-                          onChange={(e) => updateDevice(d.id, { name: e.target.value })}
-                          aria-label="Device name"
-                        />
-                        <button className="ghost" onClick={() => setSelectedDeviceId(d.id)}>
-                          {selectedDeviceId === d.id ? "Selected" : "Use for routes"}
-                        </button>
-                        <button className="ghost" onClick={() => removeDevice(d.id)}>
-                          Remove
-                        </button>
-                      </div>
-                      <div className="device-grid">
-                        <label className="field">
-                          <span>Instrument</span>
-                          <select
-                            value={d.instrumentId ?? ""}
-                            onChange={(e) => {
-                              const instrumentId = e.target.value || null;
-                              const profile = getInstrumentProfile(instrumentId);
-                              updateDevice(d.id, {
-                                instrumentId,
-                                channel: profile?.defaultChannel ?? d.channel,
-                                name: instrumentId ? profile?.name ?? d.name : d.name
-                              });
-                            }}
-                          >
-                            <option value="">Custom</option>
-                            {INSTRUMENT_PROFILES.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Input</span>
-                          <select
-                            value={d.inputId ?? ""}
-                            onChange={(e) => updateDevice(d.id, { inputId: e.target.value || null })}
-                          >
-                            <option value="">None</option>
-                            {ports.inputs.map((p) => (
-                              <option key={`${d.id}-in-${p.id}`} value={p.id}>
-                                {formatPortLabel(p.name)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Output</span>
-                          <select
-                            value={d.outputId ?? ""}
-                            onChange={(e) => updateDevice(d.id, { outputId: e.target.value || null })}
-                          >
-                            <option value="">None</option>
-                            {ports.outputs.map((p) => (
-                              <option key={`${d.id}-out-${p.id}`} value={p.id}>
-                                {formatPortLabel(p.name)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Default channel</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={16}
-                            value={d.channel}
-                            onChange={(e) => updateDevice(d.id, { channel: clampChannel(Number(e.target.value)) })}
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Clock</span>
-                          <div className="chip">
-                            <input
-                              type="checkbox"
-                              checked={d.clockEnabled}
-                              onChange={(e) => updateDevice(d.id, { clockEnabled: e.target.checked })}
-                            />{" "}
-                            Enable
-                          </div>
-                        </label>
-                      </div>
-                      {getInstrumentProfile(d.instrumentId)?.localControlNote ? (
-                        <p className="muted">{getInstrumentProfile(d.instrumentId)?.localControlNote}</p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-                <button onClick={addDevice} disabled={devices.length >= MAX_DEVICES}>
-                  Add device
+            ))}
+          </div>
+          {targetProfile ? (
+            <div style={{ ...styles.row, marginTop: "12px", flexWrap: "wrap", gap: "6px" }}>
+              <span style={styles.muted}>Top CCs:</span>
+              {targetProfile.cc.slice(0, 5).map((c) => (
+                <button key={c.id} style={styles.btnTiny} onClick={() => applyPreset(c.cc)}>
+                  CC {c.cc} - {c.label}
                 </button>
-              </div>
-            </div>
-          </section>
-        </>
-      ) : null}
-
-      {activeView === "routes" ? (
-        <>
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Create route</h2>
-              <p>Forward input to output with optional filters.</p>
-            </div>
-            <div className="grid two">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Channel mode</h3>
-                </div>
-                <label className="field">
-                  <span>Force channel</span>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      type="number"
-                      min={1}
-                      max={16}
-                      value={routeChannel}
-                      disabled={!forceChannelEnabled}
-                      onChange={(e) => setRouteChannel(clampChannel(Number(e.target.value)))}
-                      style={{ flex: 1 }}
-                    />
-                    <button className="ghost" onClick={() => setForceChannelEnabled((on) => !on)}>
-                      {forceChannelEnabled ? "Passthrough" : "Force"}
-                    </button>
-                  </div>
-                </label>
-                <div className="field">
-                  <span>Message types</span>
-                  <div className="chips">
-                    <label className="chip">
-                      <input type="checkbox" checked={allowNotes} onChange={(e) => setAllowNotes(e.target.checked)} /> Notes
-                    </label>
-                    <label className="chip">
-                      <input type="checkbox" checked={allowCc} onChange={(e) => setAllowCc(e.target.checked)} /> CC
-                    </label>
-                    <label className="chip">
-                      <input
-                        type="checkbox"
-                        checked={allowExpression}
-                        onChange={(e) => setAllowExpression(e.target.checked)}
-                      />{" "}
-                      Pitch/aftertouch
-                    </label>
-                    <label className="chip">
-                      <input
-                        type="checkbox"
-                        checked={allowTransport}
-                        onChange={(e) => setAllowTransport(e.target.checked)}
-                      />{" "}
-                      Start/stop
-                    </label>
-                    <label className="chip">
-                      <input type="checkbox" checked={allowClock} onChange={(e) => setAllowClock(e.target.checked)} /> Clock
-                    </label>
-                  </div>
-                </div>
-                <label className="field">
-                  <span>Clock thinning (send every Nth clock)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={96}
-                    value={clockDiv}
-                    onChange={(e) => setClockDiv(Math.max(1, Math.round(Number(e.target.value) || 1)))}
-                  />
-                </label>
-                <label className="field">
-                  <span>Route using device (optional)</span>
-                  <select value={selectedDeviceId ?? ""} onChange={(e) => setSelectedDeviceId(e.target.value || null)}>
-                    <option value="">None</option>
-                    {devices.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button onClick={addRoute} disabled={!selectedIn && !selectedOut && !selectedDeviceId}>
-                  Add route
-                </button>
-              </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>Manual ports</h3>
-                </div>
-                <DeviceSelect
-                  title="Input (monitor)"
-                  ports={ports.inputs}
-                  selectedId={selectedIn}
-                  onSelect={setSelectedIn}
-                  emptyLabel="No MIDI inputs detected"
-                />
-                <DeviceSelect
-                  title="Output (send)"
-                  ports={ports.outputs}
-                  selectedId={selectedOut}
-                  onSelect={setSelectedOut}
-                  emptyLabel="No MIDI outputs detected"
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Active routes</h2>
-              <p>{routes.length === 0 ? "No routes yet" : `${routes.length} route${routes.length === 1 ? "" : "s"}`}</p>
-            </div>
-            <div className="log">
-              {routes.length === 0 && <p className="muted">Create a route above to start routing.</p>}
-              {routes.map((route) => (
-                <div key={route.id} className="log-row">
-                  <div>
-                    <p className="label">
-                      {portName(route.fromId)} → {portName(route.toId)}
-                    </p>
-                    <p className="muted">
-                      {route.channelMode === "force" && route.forceChannel
-                        ? `Force ch ${route.forceChannel}`
-                        : "Channel passthrough"}
-                      {" · "}
-                      {describeFilter(route.filter)}
-                    </p>
-                  </div>
-                  <button className="ghost" onClick={() => removeRoute(route.id)}>
-                    Remove
-                  </button>
-                </div>
               ))}
+              <select
+                style={styles.select}
+                onChange={(e) => {
+                  const ccNum = Number(e.target.value);
+                  if (!Number.isNaN(ccNum)) applyPreset(ccNum);
+                }}
+              >
+                <option value="">Assign CC to Slot 1</option>
+                {targetProfile.cc.map((c) => (
+                  <option key={c.id} value={c.cc}>
+                    CC {c.cc} - {c.label}
+                  </option>
+                ))}
+              </select>
+              <button style={styles.btnTiny} onClick={() => selectedControl && updateSlot(selectedControl.id, 0, { enabled: false })}>
+                Disable Slot 1
+              </button>
             </div>
-          </section>
+          ) : null}
+          <div style={{ ...styles.row, marginTop: "12px" }}>
+            <button style={styles.btnSecondary} onClick={onSendCc}>
+              Send CC {ccValue}
+            </button>
+            <button style={styles.btnSecondary} onClick={onSendNote}>
+              Send Note {note}
+            </button>
+          </div>
+        </Panel>
+      </div>
+    </Page>
+  );
+}
 
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Send a ping</h2>
-              <p>Verifies the loop: app → OXI USB → synth chain.</p>
-            </div>
-            <div className="grid two">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Note</h3>
-                  <span className="pill">ch 1</span>
-                </div>
-                <label className="field">
-                  <span>Note (MIDI number)</span>
-                  <input
-                    type="number"
-                    value={note}
-                    min={0}
-                    max={127}
-                    onChange={(e) => setNote(Number(e.target.value))}
-                  />
-                </label>
-                <button onClick={sendTestNote} disabled={!selectedOut}>
-                  Send note on/off
-                </button>
+function SnapshotsPage({
+  snapshots,
+  activeSnapshot,
+  pendingSnapshot,
+  onSelectSnapshot,
+  snapshotQuantize,
+  snapshotMode,
+  onChangeSnapshotQuantize,
+  onChangeSnapshotMode,
+  snapshotFadeMs,
+  onChangeSnapshotFade
+}: {
+  snapshots: string[];
+  activeSnapshot: string | null;
+  pendingSnapshot: string | null;
+  onSelectSnapshot: (name: string) => void;
+  snapshotQuantize: SnapshotQuantize;
+  snapshotMode: SnapshotMode;
+  onChangeSnapshotQuantize: (q: SnapshotQuantize) => void;
+  onChangeSnapshotMode: (m: SnapshotMode) => void;
+  snapshotFadeMs: number;
+  onChangeSnapshotFade: (ms: number) => void;
+}) {
+  return (
+    <Page>
+      <PageHeader
+        title="Snapshots & Transitions"
+        right={
+          <div style={styles.row}>
+            <span style={styles.muted}>Fade</span>
+            <input
+              style={styles.inputNarrow}
+              value={snapshotFadeMs}
+              onChange={(e) => onChangeSnapshotFade(Number(e.target.value) || 0)}
+            />
+            <select style={styles.select} value={snapshotMode} onChange={(e) => onChangeSnapshotMode(e.target.value as SnapshotMode)}>
+              <option value="jump">Jump</option>
+              <option value="commit">Commit @ cycle end</option>
+            </select>
+            <select
+              style={styles.select}
+              value={snapshotQuantize}
+              onChange={(e) => onChangeSnapshotQuantize(e.target.value as SnapshotQuantize)}
+            >
+              <option value="immediate">Immediate</option>
+              <option value="bar1">1 Bar Quant</option>
+              <option value="bar4">4 Bar Quant</option>
+            </select>
+            <button style={styles.btnPrimary} onClick={() => activeSnapshot && onSelectSnapshot(activeSnapshot)}>
+              Send Snapshot
+            </button>
+            {pendingSnapshot ? (
+              <button style={styles.btnSecondary} onClick={() => onSelectSnapshot(activeSnapshot ?? pendingSnapshot)}>
+                Cancel Pending
+              </button>
+            ) : null}
+          </div>
+        }
+      />
+      <div style={styles.pageGrid2}>
+        <Panel title="Snapshot Grid">
+          <div style={styles.grid}>
+            {snapshots.map((t) => (
+              <div
+                key={t}
+                onClick={() => onSelectSnapshot(t)}
+                style={{
+                  ...styles.tile,
+                  backgroundColor: activeSnapshot === t ? "#0078d433" : "#222",
+                  borderColor: activeSnapshot === t ? "#0078d4" : "#333"
+                }}
+              >
+                <div style={styles.tileTitle}>{t}</div>
+                <div style={styles.tileMeta}>8 Targets</div>
+                {activeSnapshot === t ? <div style={{ ...styles.pill, marginTop: "4px" }}>Active</div> : null}
+                {pendingSnapshot === t ? <div style={{ ...styles.pill, marginTop: "4px" }}>Pending</div> : null}
               </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>CC</h3>
-                  <span className="pill">CC 1</span>
-                </div>
-                <label className="field">
-                  <span>Value</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={127}
-                    value={ccValue}
-                    onChange={(e) => setCcValue(Number(e.target.value))}
-                  />
-                  <output>{ccValue}</output>
-                </label>
-                <button onClick={sendCc} disabled={!selectedOut}>
-                  Send CC
-                </button>
-              </div>
+            ))}
+            <div style={{ ...styles.tile, border: "1px dashed #444" }}>
+              <Plus size={20} color="#666" />
             </div>
-      </section>
-    </>
-  ) : null}
+          </div>
+        </Panel>
+        <Panel title={`Selected: ${activeSnapshot ?? "None"}`}>
+          <div style={styles.card}>
+            <div style={styles.row}>
+              <span style={{ color: "#35c96a", fontSize: "12px" }}>{activeSnapshot ? "● Active" : "● Idle"}</span>
+              {pendingSnapshot ? <span style={styles.muted}>Pending: {pendingSnapshot}</span> : null}
+            </div>
+          </div>
+          <div style={styles.table}>
+            <div style={styles.tableRow}>
+              <span style={styles.valueText}>Synth 1 Filter</span> <span style={styles.kpi}>127</span>
+            </div>
+            <div style={styles.tableRow}>
+              <span style={styles.valueText}>Reverb Mix</span> <span style={styles.kpi}>88</span>
+            </div>
+            <div style={styles.tableRow}>
+              <span style={styles.valueText}>Distortion</span> <span style={styles.kpi}>10</span>
+            </div>
+          </div>
+        </Panel>
+      </div>
+      <div style={styles.queueStrip}>
+        <span style={{ fontSize: "11px", fontWeight: "bold" }}>NEXT ACTION:</span>
+        <span style={styles.pill}>CHORUS 1 @ Bar 64</span>
+        <button style={styles.btnTiny}>Cancel</button>
+      </div>
+    </Page>
+  );
+}
 
-      {activeView === "snapshots" ? (
-        <>
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Snapshots</h2>
-              <p>Capture per-device CC/program/note state and recall it with Jump/Commit strategies.</p>
+function ChainsPage({
+  chainSteps,
+  playing,
+  currentIndex,
+  quantize,
+  onStart,
+  onStop,
+  onAddStep,
+  onRemoveStep,
+  onMoveStep,
+  onUpdateBars
+}: {
+  chainSteps: ChainStep[];
+  playing: boolean;
+  currentIndex: number;
+  quantize: SnapshotQuantize;
+  onStart: () => void;
+  onStop: () => void;
+  onAddStep: () => void;
+  onRemoveStep: (index: number) => void;
+  onMoveStep: (from: number, to: number) => void;
+  onUpdateBars: (index: number, bars: number) => void;
+}) {
+  return (
+    <Page>
+      <PageHeader
+        title="Performance Chains"
+        right={
+          <div style={styles.row}>
+            <button style={styles.btnPrimary} onClick={onAddStep}>
+              Add Step
+            </button>
+            <button style={styles.btnSecondary} onClick={onStart} disabled={playing}>
+              Play
+            </button>
+            <button style={styles.btnSecondary} onClick={onStop} disabled={!playing}>
+              Stop
+            </button>
+          </div>
+        }
+      />
+      <Panel title="Sequence Timeline">
+        <div style={{ display: "flex", gap: "12px", flexDirection: "column" }}>
+          <div style={styles.card}>
+            <div style={{ ...styles.row, justifyContent: "space-between" }}>
+              <strong>Main Chain</strong>
+              <span style={styles.muted}>Quantize: {quantize === "immediate" ? "Immediate" : quantize === "bar4" ? "4 bars" : "1 bar"}</span>
             </div>
-            <div className="grid two">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Banks</h3>
-                  <span className="pill">{snapshots.banks.length} banks</span>
-                </div>
-                {snapshots.banks.length === 0 ? (
-                  <p className="muted">No banks yet.</p>
-                ) : (
-                  <>
-                    <div className="chips">
-                      {snapshots.banks.map((bank) => (
-                        <button
-                          key={bank.id}
-                          className={activeSnapshotBank?.id === bank.id ? "ghost active" : "ghost"}
-                          onClick={() => setActiveSnapshotBank(bank.id)}
-                        >
-                          {bank.name}
-                        </button>
-                      ))}
-                    </div>
-                    {activeSnapshotBank ? (
-                      <label className="field">
-                        <span>Bank name</span>
-                        <input
-                          type="text"
-                          value={activeSnapshotBank.name}
-                          onChange={(e) =>
-                            updateSnapshotBank(activeSnapshotBank.id, (bank) => ({ ...bank, name: e.target.value }))
-                          }
-                        />
-                      </label>
-                    ) : null}
-                  </>
-                )}
-              </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>Recall options</h3>
-                </div>
-                <label className="field">
-                  <span>Strategy</span>
-                  <select
-                    value={snapshots.strategy}
-                    onChange={(e) => updateSnapshotsState({ strategy: e.target.value as SnapshotRecallStrategy })}
-                  >
-                    <option value="jump">Jump (immediate)</option>
-                    <option value="commit">Commit (cycle end)</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Fade (ms)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={snapshots.fadeMs}
-                    onChange={(e) => updateSnapshotsState({ fadeMs: Math.max(0, Number(e.target.value) || 0) })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Commit delay (ms)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={snapshots.commitDelayMs}
-                    onChange={(e) =>
-                      updateSnapshotsState({ commitDelayMs: Math.max(0, Number(e.target.value) || 0) })
-                    }
-                  />
-                </label>
-                <div className="grid two">
-                  <label className="field">
-                    <span>Burst max per window</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={snapshots.burst.maxPerInterval}
-                      onChange={(e) =>
-                        updateSnapshotsState({
-                          burst: { ...snapshots.burst, maxPerInterval: Math.max(1, Number(e.target.value) || 1) }
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Burst window (ms)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={snapshots.burst.intervalMs}
-                      onChange={(e) =>
-                        updateSnapshotsState({
-                          burst: { ...snapshots.burst, intervalMs: Math.max(1, Number(e.target.value) || 1) }
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Capture notes</span>
-                  <textarea
-                    value={snapshots.captureNotes}
-                    onChange={(e) => updateSnapshotsState({ captureNotes: e.target.value })}
-                    rows={3}
-                  />
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Bank slots</h2>
-              <p>{activeSnapshotBank ? activeSnapshotBank.name : "No active bank selected"}</p>
-            </div>
-            <div className="log">
-              {!activeSnapshotBank ? (
-                <p className="muted">Select a bank above to work with snapshot slots.</p>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "6px" }}>
+              {chainSteps.length === 0 ? (
+                <span style={styles.muted}>No steps yet.</span>
               ) : (
-                activeSnapshotBank.slots.map((slot) => (
-                  <div key={slot.id} className="log-row">
-                    <div>
+                chainSteps.map((step, idx) => (
+                  <div
+                    key={`${step.snapshot}-${idx}`}
+                    style={{
+                      ...styles.pillRow,
+                      backgroundColor: idx === currentIndex && playing ? "#103553" : "#1f2a33",
+                      border: idx === currentIndex && playing ? "1px solid #19b0d7" : "1px solid #29313a"
+                    }}
+                  >
+                    <span style={styles.valueText}>{step.snapshot}</span>
+                    <div style={styles.row}>
+                      <span style={styles.muted}>Bars</span>
                       <input
-                        type="text"
-                        value={slot.name}
-                        onChange={(e) =>
-                          updateSnapshotSlot(activeSnapshotBank.id, slot.id, (s) => ({ ...s, name: e.target.value }))
-                        }
-                        style={{ marginBottom: 6 }}
+                        style={styles.inputNarrow}
+                        type="number"
+                        min={1}
+                        max={64}
+                        value={step.bars}
+                        onChange={(e) => onUpdateBars(idx, Math.max(1, Math.min(64, Number(e.target.value) || 1)))}
                       />
-                      <p className="muted">
-                        {slot.snapshot
-                          ? `Captured ${new Date((slot.lastCapturedAt ?? slot.snapshot.capturedAt) ?? Date.now()).toLocaleString()} · Devices ${slot.snapshot.devices.length} · BPM ${slot.snapshot.bpm ?? "—"}`
-                          : "Empty slot"}
-                      </p>
-                      <label className="field">
-                        <span>Notes</span>
-                        <input
-                          type="text"
-                          value={slot.notes}
-                          onChange={(e) =>
-                            updateSnapshotSlot(activeSnapshotBank.id, slot.id, (s) => ({ ...s, notes: e.target.value }))
-                          }
-                        />
-                      </label>
                     </div>
-                    <div className="chips">
-                      <button className="ghost" onClick={() => captureSnapshotSlot(activeSnapshotBank.id, slot.id)}>
-                        Capture
+                    <div style={styles.row}>
+                      <button style={styles.btnTiny} onClick={() => onMoveStep(idx, idx - 1)} disabled={idx === 0}>
+                        <ChevronLeft size={12} />
                       </button>
                       <button
-                        className="ghost"
-                        onClick={() => recallSnapshotSlot(activeSnapshotBank.id, slot.id, "jump")}
-                        disabled={!slot.snapshot}
+                        style={styles.btnTiny}
+                        onClick={() => onMoveStep(idx, idx + 1)}
+                        disabled={idx === chainSteps.length - 1}
                       >
-                        Jump
+                        <ChevronRight size={12} />
                       </button>
-                      <button
-                        className="ghost"
-                        onClick={() => recallSnapshotSlot(activeSnapshotBank.id, slot.id, "commit")}
-                        disabled={!slot.snapshot}
-                      >
-                        Commit
+                      <button style={styles.btnTiny} onClick={() => onRemoveStep(idx)}>
+                        <Trash2 size={12} />
                       </button>
                     </div>
                   </div>
                 ))
               )}
-            </div>
-          </section>
-        </>
-      ) : null}
-
-      {activeView === "chains" ? (
-        <>
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Transport & chains</h2>
-              <p>Up to 20 chains, 64 steps. Chain changes are quantized to cycle boundaries.</p>
-            </div>
-            <div className="grid two">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Transport</h3>
-                  <span className="pill">{sequencer.transport.running ? "Running" : "Stopped"}</span>
-                </div>
-                <label className="field">
-                  <span>BPM</span>
-                  <input
-                    type="number"
-                    min={30}
-                    max={240}
-                    value={sequencer.transport.bpm}
-                    onChange={(e) =>
-                      setTransport({ bpm: Math.min(Math.max(Math.round(Number(e.target.value) || 120), 30), 240) })
-                    }
-                  />
-                </label>
-                <div className="chips">
-                  <button className="ghost" onClick={() => setTransport({ running: true })}>
-                    Start
-                  </button>
-                  <button className="ghost" onClick={() => setTransport({ running: false })}>
-                    Stop
-                  </button>
-                </div>
-                <p className="muted">Clock is sent to devices with clock enabled and to all chain targets.</p>
-              </div>
-
-              <div className="card">
-                <div className="card-head">
-                  <h3>Chains</h3>
-                  <span className="pill">
-                    {sequencer.chains.length}/{MAX_SEQUENCER_CHAINS}
-                  </span>
-                </div>
-                <div className="stack">
-                  {sequencer.chains.map((chain) => (
-                    <div key={chain.id} className="device-row">
-                      <input
-                        type="text"
-                        value={chain.name}
-                        onChange={(e) => updateChain(chain.id, (c) => ({ ...c, name: e.target.value }))}
-                        aria-label={`${chain.name} name`}
-                      />
-                      <div className="chips">
-                        <button
-                          className={sequencer.activeChainId === chain.id ? "ghost active" : "ghost"}
-                          onClick={() => setActiveChain(chain.id)}
-                        >
-                          {sequencer.activeChainId === chain.id ? "Active" : "Queue"}
-                        </button>
-                        <button className="ghost" onClick={() => removeChain(chain.id)} disabled={sequencer.chains.length <= 1}>
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={addChain} disabled={sequencer.chains.length >= MAX_SEQUENCER_CHAINS}>
-                  Add chain
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h2>World state</h2>
-              <p>Filters + mutation hooks scale event survivors.</p>
-            </div>
-            <div className="grid two">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Dynamics</h3>
-                </div>
-                <label className="field">
-                  <span>Energy</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={sequencer.world.energy}
-                    onChange={(e) => setWorld({ energy: Number(e.target.value) })}
-                  />
-                  <output>{sequencer.world.energy.toFixed(2)}</output>
-                </label>
-                <label className="field">
-                  <span>Density</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={sequencer.world.density}
-                    onChange={(e) => setWorld({ density: Number(e.target.value) })}
-                  />
-                  <output>{sequencer.world.density.toFixed(2)}</output>
-                </label>
-                <label className="field">
-                  <span>Stability</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={sequencer.world.stability}
-                    onChange={(e) => setWorld({ stability: Number(e.target.value) })}
-                  />
-                  <output>{sequencer.world.stability.toFixed(2)}</output>
-                </label>
-              </div>
-              <div className="card">
-                <div className="card-head">
-                  <h3>Mutation</h3>
-                </div>
-                <label className="field">
-                  <span>Mutation pressure</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={sequencer.world.mutationPressure}
-                    onChange={(e) => setWorld({ mutationPressure: Number(e.target.value) })}
-                  />
-                  <output>{sequencer.world.mutationPressure.toFixed(2)}</output>
-                </label>
-                <label className="field">
-                  <span>Silence debt</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={sequencer.world.silenceDebt}
-                    onChange={(e) => setWorld({ silenceDebt: Number(e.target.value) })}
-                  />
-                  <output>{sequencer.world.silenceDebt.toFixed(2)}</output>
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Chain steps</h2>
-              <p>{activeChain ? `${activeChain.steps.length} steps` : "No chain selected"}</p>
-            </div>
-            {!activeChain ? (
-              <p className="muted">Add or select a chain to edit its steps.</p>
-            ) : (
-              <>
-                <label className="field">
-                  <span>Cycle length (steps)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={MAX_SEQUENCER_STEPS}
-                    value={activeChain.cycleLength}
-                    onChange={(e) => resizeChain(activeChain.id, Number(e.target.value) || activeChain.cycleLength)}
-                  />
-                </label>
-                <div className="step-grid">
-                  {activeChain.steps.map((step, idx) => {
-                    const msg = step.msg && step.msg.t === "noteOn" ? step.msg : { t: "noteOn", ch: step.channel ?? 1, note: 60, vel: 100 };
-                    return (
-                      <div key={step.id} className="step-card">
-                        <div className="step-card-head">
-                          <div>
-                            <p className="label">Step {idx + 1}</p>
-                            <p className="muted">{step.enabled ? "Active" : "Muted"}</p>
-                          </div>
-                          <label className="chip">
-                            <input
-                              type="checkbox"
-                              checked={step.enabled}
-                              onChange={(e) => updateStep(activeChain.id, step.id, { enabled: e.target.checked })}
-                            />
-                            Enable
-                          </label>
-                        </div>
-
-                        <div className="grid two">
-                          <label className="field">
-                            <span>Note</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={127}
-                              value={msg.note}
-                              onChange={(e) => updateStepMsg(activeChain.id, step.id, { note: clampMidi(Number(e.target.value)) })}
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Velocity</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={127}
-                              value={msg.vel}
-                              onChange={(e) => updateStepMsg(activeChain.id, step.id, { vel: clampMidi(Number(e.target.value)) })}
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Weight</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={8}
-                              value={step.weight}
-                              onChange={(e) => updateStep(activeChain.id, step.id, { weight: Math.min(Math.max(Number(e.target.value) || 0, 0), 8) })}
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Gate (ms)</span>
-                            <input
-                              type="number"
-                              min={10}
-                              max={2000}
-                              value={step.gateMs}
-                              onChange={(e) => updateStep(activeChain.id, step.id, { gateMs: Math.min(Math.max(Number(e.target.value) || 0, 10), 2000) })}
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Channel</span>
-                            <input
-                              type="number"
-                              min={1}
-                              max={16}
-                              value={step.channel ?? ""}
-                              placeholder="Use device"
-                              onChange={(e) => updateStep(activeChain.id, step.id, { channel: e.target.value ? clampChannel(Number(e.target.value)) : null })}
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Target device</span>
-                            <select
-                              value={step.targetDeviceId ?? ""}
-                              onChange={(e) => updateStep(activeChain.id, step.id, { targetDeviceId: e.target.value || null })}
-                            >
-                              <option value="">None</option>
-                              {devices.map((d) => (
-                                <option key={`${activeChain.id}-dev-${d.id}`} value={d.id}>
-                                  {d.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Target port</span>
-                            <select
-                              value={step.targetPortId ?? ""}
-                              onChange={(e) => updateStep(activeChain.id, step.id, { targetPortId: e.target.value || null })}
-                            >
-                              <option value="">Use device output</option>
-                              {ports.outputs.map((p) => (
-                                <option key={`${activeChain.id}-port-${p.id}`} value={p.id}>
-                                  {formatPortLabel(p.name)}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </section>
-        </>
-      ) : null}
-
-      {activeView === "monitor" ? (
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Monitor</h2>
-            <p>
-              Backend: {backends.find((b) => b.selected)?.label ?? "Unknown"} · Input: {selectedIn ?? "None"} · Output:{" "}
-              {selectedOut ?? "None"}
-            </p>
-            <div className="chips">
-              <span className="chip">Log {activity.length}/{LOG_LIMIT}</span>
-              {logCapReached ? <span className="chip">Log capped</span> : null}
-              <button className="ghost" onClick={clearLog}>
-                Clear log
+              <button style={styles.btnSecondary} onClick={onAddStep}>
+                + Step
               </button>
             </div>
           </div>
-          <div className="log">
-            {activity.length === 0 && <p className="muted">No events yet.</p>}
-            {activity.map((evt) => (
-              <div key={evt._rowId} className="log-row">
-                <div>
-                  <p className="label">{evt.src.name ?? evt.src.id}</p>
-                  <p className="muted">{evt.label}</p>
-                </div>
-                <span className="time">{new Date(evt.ts).toLocaleTimeString()}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {activeView === "mapping" ? (
-        <>
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Mapping</h2>
-              <p>Virtual controls with up to 8 CC slots each (per-slot curve, min/max, and device target).</p>
-            </div>
-            {learnTarget ? (
-              <div className="chips" style={{ marginBottom: 10 }}>
-                <span className="chip">MIDI Learn: move a CC on the selected input (10s timeout)</span>
-                <button className="ghost" onClick={cancelLearn}>
-                  Cancel learn
-                </button>
-              </div>
-            ) : learnStatus === "captured" ? (
-              <p className="muted" style={{ marginBottom: 10 }}>
-                Learned CC.
-              </p>
-            ) : learnStatus === "timeout" ? (
-              <p className="muted" style={{ marginBottom: 10 }}>
-                Learn timed out. Try again and move a knob/fader that sends CC.
-              </p>
-            ) : null}
-            <div className="mapping-grid">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Controls</h3>
-                </div>
-                <div className="stack">
-                  {controls.map((c) => (
-                    <button
-                      key={c.id}
-                      className={c.id === selectedControlId ? "ghost active" : "ghost"}
-                      onClick={() => setSelectedControlId(c.id)}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-                {selectedControl ? (
-                  <div className="field">
-                    <span>Value</span>
-                    {selectedControl.type === "button" ? (
-                      <div className="chips">
-                        <button
-                          className="ghost"
-                          onClick={() => {
-                            updateControl(selectedControl.id, { value: 127 });
-                            void emitControl(selectedControl, 127).then(() => {
-                              setTimeout(() => {
-                                updateControl(selectedControl.id, { value: 0 });
-                                void emitControl(selectedControl, 0);
-                              }, 80);
-                            });
-                          }}
-                        >
-                          Trigger (momentary)
-                        </button>
-                        <button
-                          className="ghost"
-                          onClick={() => {
-                            const next = selectedControl.value > 0 ? 0 : 127;
-                            updateControl(selectedControl.id, { value: next });
-                            void emitControl(selectedControl, next);
-                          }}
-                        >
-                          Toggle
-                        </button>
-                        <span className="chip">Value {selectedControl.value}</span>
-                      </div>
-                    ) : (
-                      <>
-                        <input
-                          type="range"
-                          min={0}
-                          max={127}
-                          value={selectedControl.value}
-                          onChange={(e) => {
-                            const next = clampMidi(Number(e.target.value));
-                            updateControl(selectedControl.id, { value: next });
-                            void emitControl(selectedControl, next);
-                          }}
-                        />
-                        <output>{selectedControl.value}</output>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="card">
-                <div className="card-head">
-                  <h3>Slot editor</h3>
-                  <span className="pill">8 slots</span>
-                </div>
-                {!selectedControl ? (
-                  <p className="muted">Select a control.</p>
-                ) : (
-                  <div className="stack">
-                    {selectedControl.slots.map((slot, idx) => (
-                      <div key={`${selectedControl.id}-slot-${idx}`} className="slot-row">
-                        <div className="slot-head">
-                          <span className="pill">Slot {idx + 1}</span>
-                          <label className="chip">
-                            <input
-                              type="checkbox"
-                              checked={slot.enabled}
-                              onChange={(e) => updateSlot(selectedControl.id, idx, { enabled: e.target.checked })}
-                            />{" "}
-                            Enabled
-                          </label>
-                          <select
-                            value={slot.kind}
-                            onChange={(e) => {
-                              const kind = e.target.value as MappingSlot["kind"];
-                              if (kind === "empty") {
-                                updateSlot(selectedControl.id, idx, { kind: "empty", enabled: false });
-                              } else if (kind === "cc") {
-                                updateSlot(selectedControl.id, idx, {
-                                  kind: "cc",
-                                  enabled: true,
-                                  cc: 74,
-                                  min: 0,
-                                  max: 127,
-                                  curve: "linear",
-                                  targetDeviceId: devices[0]?.id ?? null
-                                });
-                              } else if (kind === "pc") {
-                                updateSlot(selectedControl.id, idx, {
-                                  kind: "pc",
-                                  enabled: true,
-                                  min: 0,
-                                  max: 127,
-                                  curve: "linear",
-                                  targetDeviceId: devices[0]?.id ?? null
-                                });
-                              } else if (kind === "note") {
-                                updateSlot(selectedControl.id, idx, {
-                                  kind: "note",
-                                  enabled: true,
-                                  note: 60,
-                                  vel: 110,
-                                  targetDeviceId: devices[0]?.id ?? null
-                                });
-                              }
-                            }}
-                          >
-                            <option value="empty">Empty</option>
-                            <option value="cc">CC</option>
-                            <option value="pc">Program change</option>
-                            <option value="note">Note</option>
-                          </select>
-                          <button
-                            className="ghost"
-                            onClick={() => {
-                              if (slot.kind !== "cc") {
-                                updateSlot(selectedControl.id, idx, {
-                                  kind: "cc",
-                                  enabled: true,
-                                  cc: 74,
-                                  min: 0,
-                                  max: 127,
-                                  curve: "linear",
-                                  targetDeviceId: devices[0]?.id ?? null
-                                });
-                              }
-                              startLearn(selectedControl.id, idx);
-                            }}
-                            disabled={!!learnTarget}
-                          >
-                            Learn
-                          </button>
-                        </div>
-
-                        {slot.kind === "empty" ? (
-                          <p className="muted">No mapping.</p>
-                        ) : (
-                          <div className="slot-grid">
-                            <label className="field">
-                              <span>Target device</span>
-                              <select
-                                value={slot.targetDeviceId ?? ""}
-                                onChange={(e) =>
-                                  updateSlot(selectedControl.id, idx, { targetDeviceId: e.target.value || null })
-                                }
-                              >
-                                <option value="">None</option>
-                                {devices.map((d) => (
-                                  <option key={d.id} value={d.id}>
-                                    {d.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-
-                            <label className="field">
-                              <span>Channel (optional)</span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={16}
-                                value={slot.channel ?? ""}
-                                placeholder="device"
-                                onChange={(e) =>
-                                  updateSlot(selectedControl.id, idx, {
-                                    channel: e.target.value === "" ? undefined : clampChannel(Number(e.target.value))
-                                  })
-                                }
-                              />
-                            </label>
-
-                            {slot.kind === "cc" ? (
-                              <label className="field">
-                                <span>CC</span>
-                                <select
-                                  value={String(slot.cc)}
-                                  onChange={(e) => updateSlot(selectedControl.id, idx, { cc: Number(e.target.value) })}
-                                >
-                                  {(() => {
-                                    const dev = devices.find((d) => d.id === slot.targetDeviceId);
-                                    const profile = getInstrumentProfile(dev?.instrumentId);
-                                    if (!profile) {
-                                      return (
-                                        <>
-                                          <option value="74">CC 74 (filter cutoff)</option>
-                                          <option value="1">CC 1 (mod)</option>
-                                          <option value="7">CC 7 (volume)</option>
-                                        </>
-                                      );
-                                    }
-                                    return profile.cc.map((c) => (
-                                      <option key={`${profile.id}-${c.cc}`} value={c.cc}>
-                                        CC {c.cc} · {c.label}
-                                      </option>
-                                    ));
-                                  })()}
-                                </select>
-                              </label>
-                            ) : null}
-
-                            {slot.kind === "note" ? (
-                              <>
-                                <label className="field">
-                                  <span>Note</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={127}
-                                    value={slot.note}
-                                    onChange={(e) =>
-                                      updateSlot(selectedControl.id, idx, { note: clampMidi(Number(e.target.value)) })
-                                    }
-                                  />
-                                </label>
-                                <label className="field">
-                                  <span>Velocity</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={127}
-                                    value={slot.vel}
-                                    onChange={(e) =>
-                                      updateSlot(selectedControl.id, idx, { vel: clampMidi(Number(e.target.value)) })
-                                    }
-                                  />
-                                </label>
-                              </>
-                            ) : (
-                              <>
-                                <label className="field">
-                                  <span>Curve</span>
-                                  <select
-                                    value={slot.curve}
-                                    onChange={(e) =>
-                                      updateSlot(selectedControl.id, idx, { curve: e.target.value as Curve })
-                                    }
-                                  >
-                                    <option value="linear">Linear</option>
-                                    <option value="expo">Expo</option>
-                                    <option value="log">Log</option>
-                                  </select>
-                                </label>
-
-                                <label className="field">
-                                  <span>{slot.kind === "pc" ? "Program min" : "Min"}</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={127}
-                                    value={slot.min}
-                                    onChange={(e) =>
-                                      updateSlot(selectedControl.id, idx, { min: clampMidi(Number(e.target.value)) })
-                                    }
-                                  />
-                                </label>
-                                <label className="field">
-                                  <span>{slot.kind === "pc" ? "Program max" : "Max"}</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={127}
-                                    value={slot.max}
-                                    onChange={(e) =>
-                                      updateSlot(selectedControl.id, idx, { max: clampMidi(Number(e.target.value)) })
-                                    }
-                                  />
-                                </label>
-                              </>
-                            )}
-
-                            {slot.kind === "pc" ? <p className="muted">Sends program change based on the control value.</p> : null}
-                            {slot.kind === "note" ? <p className="muted">Sends note on when value &gt; 0, note off when value = 0.</p> : null}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        </>
-      ) : null}
-
-      {activeView === "help" ? (
-        <section className="panel">
-          <div className="panel-head">
-            <h2>How to use this</h2>
-            <p>Quickstart for OXI-only now; synth rig later.</p>
-          </div>
-          <div className="grid two">
-            <div className="card">
-              <div className="card-head">
-                <h3>OXI-only quickstart</h3>
-              </div>
-              <ol className="help-list">
-                <li>Go to Setup and select your OXI output (Output (send)).</li>
-                <li>Optionally select your OXI input (Input (monitor)) to see notes/CC coming from the OXI.</li>
-                <li>Run Diagnostics to send a short test note (no synth required).</li>
-                <li>Open Monitor to see OUT events from the app and any IN events from OXI.</li>
-                <li>Try Mapping: click Learn on a slot and move a knob/fader that sends CC (or pick a CC preset), then move the control.</li>
-              </ol>
-              <p className="muted">
-                Tip: the Monitor now shows OUT events for actions Midimuncher sends, even if nothing is connected to OXI
-                DIN/TRS.
-              </p>
-            </div>
-            <div className="card">
-              <div className="card-head">
-                <h3>When you add synths</h3>
-              </div>
-              <ol className="help-list">
-                <li>Add devices (up to 8) and pick the instrument to get CC presets and default channels.</li>
-                <li>Bind each device output to the correct OXI port (A/B/C if Split is enabled).</li>
-                <li>Use Routing to forward MIDI from an input stream to a device output if needed.</li>
-                <li>Use Mapping to build “macros” (one control → many CCs across devices).</li>
-              </ol>
-              <p className="muted">Docs: see `docs/roadmap.md`, `docs/instruments.md`, and `docs/oxi-integration.md`.</p>
-            </div>
-          </div>
-        </section>
-      ) : null}
-    </div>
+        </div>
+      </Panel>
+    </Page>
   );
 }
 
-type DeviceSelectProps = {
-  title: string;
-  ports: MidiPortInfo[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  emptyLabel: string;
-};
-
-function DeviceSelect({ title, ports, selectedId, onSelect, emptyLabel }: DeviceSelectProps) {
-  const sorted = [...ports].sort(sortPortsWithOxiFirst);
+function MonitorPage({
+  monitorRows,
+  logCapReached,
+  clearLog
+}: {
+  monitorRows: { _rowId: string; ts: number; src: MidiPortInfo; label: string }[];
+  logCapReached: boolean;
+  clearLog: () => void;
+}) {
   return (
-    <div className="card">
-      <div className="card-head">
-        <h3>{title}</h3>
-      </div>
-      {ports.length === 0 ? (
-        <p className="muted">{emptyLabel}</p>
-      ) : (
-        <select value={selectedId ?? ""} onChange={(e) => onSelect(e.target.value)}>
-          {sorted.map((port) => (
-            <option key={port.id} value={port.id}>
-              {formatPortLabel(port.name)}
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
+    <Page>
+      <PageHeader
+        title="MIDI Monitor"
+        right={
+          <div style={styles.row}>
+            {logCapReached ? <span style={styles.pill}>Log capped</span> : null}
+            <button style={styles.btnSecondary} onClick={clearLog}>
+              Clear Log
+            </button>
+          </div>
+        }
+      />
+      <Panel title="Real-time Traffic">
+        <div
+          style={{
+            height: "400px",
+            backgroundColor: "#000",
+            fontFamily: "monospace",
+            padding: "12px",
+            fontSize: "12px",
+            color: "#35c96a",
+            overflowY: "auto"
+          }}
+        >
+          {monitorRows.length == 0 ? (
+            <div style={{ color: "#666" }}>Waiting for MIDI activity...</div>
+          ) : (
+            monitorRows.map((row) => (
+              <div key={row._rowId}>
+                [{new Date(row.ts).toLocaleTimeString()}] {row.src.name}: {row.label}
+              </div>
+            ))
+          )}
+        </div>
+      </Panel>
+    </Page>
   );
 }
 
+function SettingsPage({
+  selectedIn,
+  selectedOut,
+  onSelectIn,
+  onSelectOut
+}: {
+  selectedIn: string | null;
+  selectedOut: string | null;
+  onSelectIn: (id: string | null) => void;
+  onSelectOut: (id: string | null) => void;
+}) {
+  return (
+    <Page>
+      <PageHeader title="System Settings" />
+      <div style={styles.pageGrid2}>
+        <Panel title="Interface">
+          <div style={styles.row}>
+            <span style={styles.muted}>Theme</span>
+            <select style={styles.select}>
+              <option>Dark High-Contrast</option>
+            </select>
+          </div>
+          <div style={{ height: "10px" }} />
+          <div style={styles.row}>
+            <span style={styles.muted}>Zoom Level</span>
+            <input type="range" style={{ flex: 1 }} />
+          </div>
+        </Panel>
+        <Panel title="Backup & Restore">
+          <button style={styles.btnSecondary}>Export All Data</button>
+          <div style={{ height: "10px" }} />
+          <button style={styles.btnSecondary} onClick={() => onSelectIn(null)}>
+            Reset Input ({selectedIn ? "selected" : "none"})
+          </button>
+          <div style={{ height: "6px" }} />
+          <button style={styles.btnSecondary} onClick={() => onSelectOut(null)}>
+            Reset Output ({selectedOut ? "selected" : "none"})
+          </button>
+        </Panel>
+      </div>
+    </Page>
+  );
+}
+
+function BottomUtilityBar({
+  midiReady,
+  saveLabel,
+  version,
+  logCapReached
+}: {
+  midiReady: boolean;
+  saveLabel: string;
+  version: string;
+  logCapReached: boolean;
+}) {
+  return (
+    <div style={styles.bottomBar}>
+      <div style={styles.row}>
+        <Activity size={12} />
+        <span>CPU: 2%</span>
+        <span style={{ color: midiReady ? "#35c96a" : "#8b0000" }}>{midiReady ? "MIDI OK" : "No MIDI"}</span>
+        {logCapReached ? <span style={styles.pill}>Log capped</span> : null}
+      </div>
+      <div>Ctrl + S: Save | Space: Play | J: Jump Snapshot</div>
+      <div style={styles.row}>
+        <span>{version}</span>
+        <div style={{ ...styles.dot, backgroundColor: "#35c96a" }} />
+        <Search size={12} />
+      </div>
+    </div>
+  );
+}
 type OxiAnalysis = { isOxi: boolean; oxiTag: "A" | "B" | "C" | "?" | null; rank: number };
 
 function analyzeOxiPortName(name: string): OxiAnalysis {
@@ -2233,7 +2602,7 @@ function formatPortLabel(name: string): string {
   const a = analyzeOxiPortName(name);
   if (!a.isOxi) return name;
   const prefix = a.oxiTag && a.oxiTag !== "?" ? `OXI ${a.oxiTag}` : "OXI";
-  return `${prefix} — ${name}`;
+  return `${prefix} - ${name}`;
 }
 
 function sortPortsWithOxiFirst(a: MidiPortInfo, b: MidiPortInfo): number {
@@ -2288,9 +2657,9 @@ function describeFilter(filter?: RouteFilter): string {
     parts.push(`types: ${filter.allowTypes.join(",")}`);
   }
   if (filter.clockDiv && filter.clockDiv > 1) {
-    parts.push(`clock ÷${filter.clockDiv}`);
+    parts.push(`clock /${filter.clockDiv}`);
   }
-  return parts.length ? parts.join(" · ") : "all messages";
+  return parts.length ? parts.join(" | ") : "all messages";
 }
 
 function makeRouteId() {
