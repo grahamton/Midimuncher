@@ -4,6 +4,7 @@ import type { MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from ".
 import type { BackendId, MidiBackend, MidiPacket } from "./backends/types";
 import { WinmmBackend } from "./backends/winmmBackend";
 import { WindowsMidiServicesBackend } from "./backends/windowsMidiServicesBackend";
+import { deriveTransportFromOxiCc } from "./oxiTransport";
 
 export class MidiBridge extends EventEmitter {
   private readonly srcKind: MidiPortRef["kind"] = "usb";
@@ -11,6 +12,8 @@ export class MidiBridge extends EventEmitter {
   private readonly recentEchoes = new Map<string, number>();
   private readonly echoWindowMs = 20;
   private readonly clockCounters = new Map<string, number>();
+  private readonly transportDedup = new Map<string, number>();
+  private readonly transportDedupWindowMs = 250;
 
   private readonly portNames = new Map<string, string>();
   private readonly backends: MidiBackend[] = [new WinmmBackend(), new WindowsMidiServicesBackend()];
@@ -116,16 +119,42 @@ export class MidiBridge extends EventEmitter {
     }
   }
 
+  private markTransportSeen(portId: string, kind: "start" | "stop" | "continue", ts: number) {
+    this.transportDedup.set(`${portId}:${kind}`, ts);
+  }
+
+  private recentlySawTransport(portId: string, kind: "start" | "stop" | "continue", ts: number) {
+    const last = this.transportDedup.get(`${portId}:${kind}`);
+    return typeof last === "number" && ts - last >= 0 && ts - last < this.transportDedupWindowMs;
+  }
+
   private handleBackendMidi = (packet: MidiPacket) => {
     const midiMsg = decodeMidiMessage(packet.bytes);
     if (!midiMsg) return;
+    const ts = Date.now();
     const evt: MidiEvent = {
-      ts: Date.now(),
+      ts,
       src: { id: packet.portId, name: this.portNames.get(packet.portId), kind: this.srcKind },
       msg: midiMsg
     };
     this.emit("midi", evt);
     void this.forwardRoute(evt).catch((err) => console.warn("Route forward failed", err));
+
+    if (midiMsg.t === "start" || midiMsg.t === "stop" || midiMsg.t === "continue") {
+      this.markTransportSeen(packet.portId, midiMsg.t, ts);
+      return;
+    }
+
+    const derived = deriveTransportFromOxiCc(midiMsg);
+    if (!derived) return;
+    if (this.recentlySawTransport(packet.portId, derived.t, ts)) return;
+
+    this.markTransportSeen(packet.portId, derived.t, ts);
+    this.emit("midi", {
+      ts,
+      src: { id: packet.portId, name: this.portNames.get(packet.portId), kind: this.srcKind },
+      msg: derived
+    });
   };
 }
 

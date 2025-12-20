@@ -20,7 +20,7 @@ Known gaps / next steps
 - Snapshot morphing and per-parameter slew.
 - Stage mode: rig-aware instrument strips + transition progress fader.
 - Improve Content-Security-Policy for production build.
-- OXI transport consumption to align drops to clock/transport.
+- OXI transport consumption (CC 105/106/107) is now supported; next step is aligning cycle boundaries to transport state consistently across clock sources.
 
 Notes
 - If `pnpm` isn’t on PATH, always use `corepack pnpm ...`.

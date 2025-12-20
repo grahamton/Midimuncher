@@ -13,8 +13,10 @@ OXI configuration checklist
 - USB mode: Device.
 - USB Thru: enable if you want OXI to forward USB MIDI to DIN/TRS outs; disable if you are creating a feedback loop (double-triggering).
 - Optional: enable OXI Split selection to expose ports A/B/C (48 channels total).
-- Enable “CC Transport Msgs” if you want Midimuncher to control OXI transport via CC:
+- Enable "CC Transport Msgs" if you want Midimuncher to control OXI transport via CC:
   - CC 105: Stop
   - CC 106: Play
   - CC 107: Record (toggle)
+- If OXI sends these CCs back to the app, Midimuncher also treats them as transport events (start/stop/continue) for features like Follow Clock Start/Stop.
 - Enable the desired MIDI output destinations per sequencer.
+
