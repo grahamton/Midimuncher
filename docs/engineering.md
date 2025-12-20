@@ -23,6 +23,30 @@ This repo will grow quickly. Keep the core loops fast and predictable.
 - Feature flags: gate Windows MIDI Services, sequencer host, or experimental schedulers.
 - Snapshots/chains: keep quantize/commit/burst logic in the main process scheduler; avoid renderer timers and duplicated tempo math.
 
+## Architecture guardrails (avoid monoliths)
+- Domain code lives in `packages/core`; Electron/React should mostly be orchestration + UX.
+- Electron main stays a thin host:
+  - `apps/desktop/electron/*` owns IO, routing, scheduling, persistence, and IPC wiring.
+  - Prefer feature modules (`snapshotService`, `sequencerHost`, etc.) over growing `main.ts`.
+- Renderer stays UI-only:
+  - `apps/desktop/src/services/*` is the bridge layer (hooks/adapters), not business rules.
+  - Keep MIDI/routing/snapshot algorithms out of React components; use the main process + `@midi-playground/core`.
+- Size/ownership triggers:
+  - If a file mixes 2+ domains (e.g. routing + snapshots + mapping) or grows beyond ~800 LOC, split by feature.
+  - Prefer “feature folders” over “god components” (e.g. `src/app/mapping/*`, `src/app/snapshots/*`, `src/app/setup/*`).
+- Prototype hygiene:
+  - Avoid parallel implementations (e.g. two Stage pages) lasting more than a sprint; either delete the older one or gate it behind a flag.
+- Shared UI primitives:
+  - When control widgets become stable, move them into `packages/ui` (or delete `packages/ui` if we decide not to use it). We now host the `Fader`, `Knob`, `Crossfader`, `PadButton`, and `StepGrid` widgets in that package for reuse across desktop and future surfaces.
+
+## Current monolith risks (as of Dec 2025)
+- `apps/desktop/src/app/App.tsx` is very large and mixes many concerns (UI, orchestration, feature UIs).
+- Stage is now consolidated under the single implementation at `apps/desktop/src/app/StagePage.tsx` with helper pieces living inside `apps/desktop/src/app/stage/`, so the previous duplication has been removed.
+
+## Near-term refactor targets
+- Extract feature panels out of `apps/desktop/src/app/App.tsx` into feature folders; leave `App.tsx` as app shell + routing + high-level state wiring.
+- Consolidate Stage to one implementation (pick “rig-aware strips + Drop bundle” as the canonical Stage, delete or flag the other).
+
 ## When adding features
 - Add a smoke test if the code touches MIDI I/O or persistence.
 - Update `docs/how-to.md` for user-visible changes and `README.md` if commands shift.

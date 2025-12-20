@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Crossfader, Fader, Knob, PadButton, StepGrid } from "./components/controls";
+import { Crossfader, Fader, Knob, PadButton, StepGrid } from "@midi-playground/ui";
 
 export function ControlLabPage() {
   const [vertFader, setVertFader] = useState(0.35);
