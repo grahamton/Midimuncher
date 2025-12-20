@@ -33,15 +33,15 @@
     {
       "label": "lint:all",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["-r", "lint"],
+      "command": "corepack",
+      "args": ["pnpm", "-r", "lint"],
       "problemMatcher": []
     },
     {
       "label": "test:all",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["-r", "test"],
+      "command": "corepack",
+      "args": ["pnpm", "-r", "test"],
       "problemMatcher": []
     }
   ]

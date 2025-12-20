@@ -11,8 +11,7 @@
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "typescript.tsdk": "node_modules/typescript/lib",
-    "eslint.experimental.useFlatConfig": true,
-    "eslint.validate": ["javascript", "javascriptreact", "typescript", "typescriptreact"],
+    "eslint.enable": false,
     "search.exclude": {
       "**/node_modules": true,
       "**/dist": true,
@@ -21,7 +20,6 @@
   },
   "extensions": {
     "recommendations": [
-      "dbaeumer.vscode-eslint",
       "esbenp.prettier-vscode",
       "ms-vscode.vscode-typescript-next",
       "streetsidesoftware.code-spell-checker",

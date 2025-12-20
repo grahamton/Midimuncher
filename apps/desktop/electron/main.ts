@@ -1,5 +1,6 @@
 import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
+import { shell } from "electron";
 import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
 import type {
@@ -7,17 +8,19 @@ import type {
   MidiSendPayload,
   RouteConfig,
   SnapshotCapturePayload,
+  SessionLogStatus,
   SnapshotRecallPayload,
 } from "../shared/ipcTypes";
 import type { ProjectState, SequencerApplyPayload } from "../shared/projectTypes";
 import type { BackendId } from "./backends/types";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";
+import { SessionLogger } from "./sessionLogger";
 import { SnapshotService } from "./snapshotService";
 import { SequencerHost } from "./sequencerHost";
 
 const midiBridge = new MidiBridge();
-const snapshotService = new SnapshotService(midiBridge);
+let sessionLogger: SessionLogger | null = null;
 const sequencerHost = new SequencerHost(midiBridge);
 let projectStore: ProjectStore | null = null;
 const isDev = !app.isPackaged;
@@ -57,15 +60,32 @@ function createWindow() {
 app.whenReady().then(() => {
   app.setAppUserModelId("com.midimuncher.desktop");
   projectStore = new ProjectStore({ dir: app.getPath("userData") });
+  sessionLogger = new SessionLogger(path.join(app.getPath("userData"), "session-logs"));
+  const snapshotService = new SnapshotService(midiBridge, sessionLogger);
   createWindow();
 
   ipcMain.handle("midi:listPorts", () => midiBridge.listPorts());
   ipcMain.handle("midi:listBackends", () => midiBridge.listBackends());
-  ipcMain.handle("midi:setBackend", (_event, id: BackendId) => midiBridge.setBackend(id));
-  ipcMain.handle("midi:openIn", (_event, id: string) => midiBridge.openIn(id));
-  ipcMain.handle("midi:openOut", (_event, id: string) => midiBridge.openOut(id));
-  ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => midiBridge.send(payload));
-  ipcMain.handle("midi:setRoutes", (_event, routes: RouteConfig[]) => midiBridge.setRoutes(routes));
+  ipcMain.handle("midi:setBackend", (_event, id: BackendId) => {
+    sessionLogger?.log("ipc", { name: "midi:setBackend", id });
+    return midiBridge.setBackend(id);
+  });
+  ipcMain.handle("midi:openIn", (_event, id: string) => {
+    sessionLogger?.log("ipc", { name: "midi:openIn", id });
+    return midiBridge.openIn(id);
+  });
+  ipcMain.handle("midi:openOut", (_event, id: string) => {
+    sessionLogger?.log("ipc", { name: "midi:openOut", id });
+    return midiBridge.openOut(id);
+  });
+  ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => {
+    sessionLogger?.log("ipc", { name: "midi:send", portId: payload?.portId, msg: payload?.msg?.t ?? null });
+    return midiBridge.send(payload);
+  });
+  ipcMain.handle("midi:setRoutes", (_event, routes: RouteConfig[]) => {
+    sessionLogger?.log("ipc", { name: "midi:setRoutes", routeCount: Array.isArray(routes) ? routes.length : 0 });
+    return midiBridge.setRoutes(routes);
+  });
 
   ipcMain.handle("mapping:emit", async (_event, payload: MappingEmitPayload) => {
     try {
@@ -85,27 +105,56 @@ app.whenReady().then(() => {
     if (!projectStore) return null;
     const doc = await projectStore.load();
     snapshotService.updateDevices(doc.state.devices);
+    sessionLogger?.log("ipc", { name: "project:load", schemaVersion: doc.schemaVersion });
     return doc;
   });
   ipcMain.handle("project:setState", (_event, state: ProjectState) => {
     if (!projectStore) return false;
     projectStore.setState(state);
     snapshotService.updateDevices(state.devices);
+    sessionLogger?.log("ipc", {
+      name: "project:setState",
+      deviceCount: state.devices?.length ?? 0,
+      routeCount: state.routes?.length ?? 0,
+      controlCount: state.controls?.length ?? 0,
+      selectedIn: state.selectedIn ?? null,
+      selectedOut: state.selectedOut ?? null,
+      backendId: state.backendId ?? null,
+      activeView: state.activeView ?? null,
+    });
     return true;
   });
   ipcMain.handle("project:flush", async () => {
     if (!projectStore) return false;
+    sessionLogger?.log("ipc", { name: "project:flush" });
     await projectStore.flush();
     return true;
   });
-  ipcMain.handle("snapshot:capture", (_event, payload: SnapshotCapturePayload) => snapshotService.capture(payload));
-  ipcMain.handle("snapshot:recall", (_event, payload: SnapshotRecallPayload) => snapshotService.recall(payload));
+  ipcMain.handle("snapshot:capture", (_event, payload: SnapshotCapturePayload) => {
+    sessionLogger?.log("ipc", { name: "snapshot:capture" });
+    return snapshotService.capture(payload);
+  });
+  ipcMain.handle("snapshot:recall", (_event, payload: SnapshotRecallPayload) => {
+    sessionLogger?.log("ipc", { name: "snapshot:recall", strategy: payload?.strategy ?? null });
+    return snapshotService.recall(payload);
+  });
+
+  ipcMain.handle("session:status", () => (sessionLogger?.status() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);
+  ipcMain.handle("session:start", () => (sessionLogger?.start() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);
+  ipcMain.handle("session:stop", () => (sessionLogger?.stop() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);
+  ipcMain.handle("session:reveal", () => {
+    const p = sessionLogger?.revealPath() ?? null;
+    if (p) shell.showItemInFolder(p);
+    return p;
+  });
 
   ipcMain.handle("sequencer:apply", (_event, payload: SequencerApplyPayload) => {
+    sessionLogger?.log("ipc", { name: "sequencer:apply" });
     return sequencerHost.apply(payload);
   });
 
   midiBridge.on("midi", (evt: MidiEvent) => {
+    sessionLogger?.logMidi(evt);
     snapshotService.ingest(evt);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("midi:event", evt);

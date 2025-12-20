@@ -6,6 +6,7 @@ import type {
   MidiPorts,
   MidiSendPayload,
   RouteConfig,
+  SessionLogStatus,
   SnapshotCapturePayload,
   SnapshotRecallPayload
 } from "../shared/ipcTypes";
@@ -25,6 +26,10 @@ const midiApi = {
   flushProject: (): Promise<boolean> => ipcRenderer.invoke("project:flush"),
   captureSnapshot: (payload?: SnapshotCapturePayload): Promise<SnapshotState> => ipcRenderer.invoke("snapshot:capture", payload),
   recallSnapshot: (payload: SnapshotRecallPayload): Promise<boolean> => ipcRenderer.invoke("snapshot:recall", payload),
+  sessionStatus: (): Promise<SessionLogStatus> => ipcRenderer.invoke("session:status"),
+  sessionStart: (): Promise<SessionLogStatus> => ipcRenderer.invoke("session:start"),
+  sessionStop: (): Promise<SessionLogStatus> => ipcRenderer.invoke("session:stop"),
+  sessionReveal: (): Promise<string | null> => ipcRenderer.invoke("session:reveal"),
   applySequencer: (payload: SequencerApplyPayload): Promise<boolean> => ipcRenderer.invoke("sequencer:apply", payload),
   onEvent: (listener: (evt: MidiEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, data: MidiEvent) => listener(data);

@@ -67,3 +67,10 @@ export type SnapshotCapturePayload = {
   notes?: string | null;
   bpm?: number | null;
 };
+
+export type SessionLogStatus = {
+  active: boolean;
+  filePath: string | null;
+  startedAt: number | null;
+  eventCount: number;
+};

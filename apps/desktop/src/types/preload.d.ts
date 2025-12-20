@@ -5,6 +5,7 @@ import type {
   MidiPorts,
   MidiSendPayload,
   RouteConfig,
+  SessionLogStatus,
   SnapshotCapturePayload,
   SnapshotRecallPayload
 } from "../../shared/ipcTypes";
@@ -24,6 +25,10 @@ export type MidiApi = {
   flushProject: () => Promise<boolean>;
   captureSnapshot: (payload?: SnapshotCapturePayload) => Promise<SnapshotState>;
   recallSnapshot: (payload: SnapshotRecallPayload) => Promise<boolean>;
+  sessionStatus: () => Promise<SessionLogStatus>;
+  sessionStart: () => Promise<SessionLogStatus>;
+  sessionStop: () => Promise<SessionLogStatus>;
+  sessionReveal: () => Promise<string | null>;
   applySequencer: (payload: SequencerApplyPayload) => Promise<boolean>;
   onEvent: (listener: (evt: MidiEvent) => void) => () => void;
 };

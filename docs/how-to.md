@@ -24,6 +24,7 @@ This is a quick-start guide for the desktop app as it exists today. It assumes y
 
 ## 3) Snapshots (Snapshots tab)
 - Pads: click to trigger; the active pad is labeled; pending shows a badge when quantized.
+- Capture: select a pad and click **Capture** (or Shift+click a pad) to store the current tracked MIDI state into that slot; empty pads won’t recall anything until captured.
 - Quantize: Immediate, 1 bar, or 4 bars (uses either manual BPM or external clock if “Follow MIDI Clock” is on).
 - Mode: **Jump** (switch immediately at quantize point) or **Commit** (stage then commit).
 - Fade: set milliseconds for level transitions when switching snapshots.

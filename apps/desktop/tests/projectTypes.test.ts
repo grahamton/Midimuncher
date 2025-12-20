@@ -4,6 +4,13 @@ import { describe, it } from "node:test";
 import { coerceProjectDoc, defaultProjectDoc } from "../shared/projectTypes";
 
 describe("coerceProjectDoc", () => {
+  it("applies snapshots defaults when missing", () => {
+    const result = coerceProjectDoc({ schemaVersion: 2, updatedAt: 123, state: {} });
+    assert.equal(result.state.snapshots.burst.intervalMs, 6);
+    assert.equal(result.state.snapshots.burst.maxPerInterval, 1);
+    assert.equal(result.state.snapshots.banks.length > 0, true);
+  });
+
   it("falls back to defaults for invalid payloads", () => {
     const fallback = defaultProjectDoc();
     const result = coerceProjectDoc({ schemaVersion: 99, state: null });

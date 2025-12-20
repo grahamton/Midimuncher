@@ -1,6 +1,9 @@
 import { MidiBackend } from "./types";
 import type { BackendId } from "./types";
 import type { MidiPorts } from "../../shared/ipcTypes";
+import { createRequire } from "node:module";
+
+const require = createRequire(__filename);
 
 type Runtime = {
   module: unknown;
@@ -102,6 +105,12 @@ export class WindowsMidiServicesBackend extends MidiBackend {
 
   private async initRuntime(): Promise<Runtime | null> {
     if (process.platform !== "win32") return null;
+    try {
+      // Avoid noisy warnings in dev when the optional package isn't installed.
+      require.resolve("windows-midi-services");
+    } catch {
+      return null;
+    }
     try {
       const module = await import("windows-midi-services");
       const session = await this.createSession(module);

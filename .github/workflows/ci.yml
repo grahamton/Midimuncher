@@ -7,7 +7,8 @@ on:
     branches: ["main", "master"]
 
 jobs:
-  lint-and-test:
+  core:
+    name: Core (lint/test)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,8 +25,38 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install (core only)
+        run: pnpm install --frozen-lockfile --filter @midi-playground/core...
 
-      - name: Lint and test
-        run: pnpm run ci
+      - name: Lint
+        run: pnpm -C packages/core lint
+
+      - name: Test
+        run: pnpm -C packages/core test
+
+  desktop:
+    name: Desktop (lint/test)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install (desktop only)
+        run: pnpm install --frozen-lockfile --filter @midi-playground/desktop...
+
+      - name: Lint
+        run: pnpm -C apps/desktop lint
+
+      - name: Test
+        run: pnpm -C apps/desktop test

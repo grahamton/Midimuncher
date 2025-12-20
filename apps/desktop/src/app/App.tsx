@@ -34,6 +34,7 @@ import type {
   MidiEvent,
   MidiMsg,
   MidiPortRef,
+  SnapshotState,
 } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
@@ -42,6 +43,8 @@ import type {
   MidiSendPayload,
   RouteConfig,
   RouteFilter,
+  SessionLogStatus,
+  SnapshotRecallPayload,
 } from "../../shared/ipcTypes";
 import { defaultProjectState } from "../../shared/projectTypes";
 import type {
@@ -51,6 +54,7 @@ import type {
   ProjectState,
   SnapshotMode,
   SnapshotQuantize,
+  SnapshotsState,
 } from "../../shared/projectTypes";
 import { useMidiBridgeClock, type BridgeClock } from "../services/midiBridge";
 import { StagePage } from "./StagePage";
@@ -471,18 +475,11 @@ export function App() {
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
   const [diagRunning, setDiagRunning] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(defaults.activeView);
-  const [snapshots] = useState<string[]>([
-    "INTRO",
-    "VERSE",
-    "CHORUS 1",
-    "BUILD",
-    "DROP!!",
-    "OUTRO",
-    "SOLO",
-    "BREAK",
-  ]);
-  const [activeSnapshot, setActiveSnapshot] = useState<string | null>(null);
-  const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
+  const [snapshotsState, setSnapshotsState] = useState(defaults.snapshots);
+  const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
+  const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(
+    null
+  );
   const [snapshotQuantize, setSnapshotQuantize] = useState<SnapshotQuantize>(
     defaults.snapshotQuantize
   );
@@ -527,6 +524,9 @@ export function App() {
     "idle" | "listening" | "captured" | "timeout"
   >("idle");
   const learnTimerRef = useRef<number | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<SessionLogStatus | null>(
+    null
+  );
 
   useEffect(() => {
     selectedInRef.current = selectedIn;
@@ -589,6 +589,7 @@ export function App() {
         );
         setSnapshotMode(state.snapshotMode ?? defaults.snapshotMode);
         setSnapshotFadeMs(state.snapshotFadeMs ?? defaults.snapshotFadeMs);
+        setSnapshotsState(state.snapshots ?? defaults.snapshots);
         setChainSteps(
           Array.isArray(state.chainSteps) && state.chainSteps.length
             ? state.chainSteps
@@ -715,6 +716,42 @@ export function App() {
   }, [midiApi]);
 
   useEffect(() => {
+    if (!midiApi) return;
+    let cancelled = false;
+    void midiApi.sessionStatus().then((status) => {
+      if (cancelled) return;
+      setSessionStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [midiApi]);
+
+  const refreshSessionStatus = async () => {
+    if (!midiApi) return;
+    const status = await midiApi.sessionStatus();
+    setSessionStatus(status);
+  };
+
+  const startSessionRecording = async () => {
+    if (!midiApi) return;
+    const status = await midiApi.sessionStart();
+    setSessionStatus(status);
+  };
+
+  const stopSessionRecording = async () => {
+    if (!midiApi) return;
+    const status = await midiApi.sessionStop();
+    setSessionStatus(status);
+  };
+
+  const revealSessionLog = async () => {
+    if (!midiApi) return;
+    await midiApi.sessionReveal();
+    await refreshSessionStatus();
+  };
+
+  useEffect(() => {
     learnTargetRef.current = learnTarget;
   }, [learnTarget]);
 
@@ -753,7 +790,7 @@ export function App() {
       snapshotQuantize,
       snapshotMode,
       snapshotFadeMs,
-      snapshots: defaults.snapshots,
+      snapshots: snapshotsState,
       chainSteps,
       devices,
       routes,
@@ -819,6 +856,7 @@ export function App() {
     snapshotQuantize,
     snapshotMode,
     snapshotFadeMs,
+    snapshotsState,
     chainSteps,
     forceChannelEnabled,
     routeChannel,
@@ -849,7 +887,7 @@ export function App() {
       snapshotQuantize,
       snapshotMode,
       snapshotFadeMs,
-      snapshots: defaults.snapshots,
+      snapshots: snapshotsState,
       chainSteps,
       devices,
       routes,
@@ -894,6 +932,7 @@ export function App() {
     snapshotQuantize,
     snapshotMode,
     snapshotFadeMs,
+    snapshotsState,
     chainSteps,
     devices,
     routes,
@@ -1380,41 +1419,18 @@ export function App() {
     });
   }
 
-  function scheduleBurstSend(
-    batch: MidiSendPayload[],
-    sender: (payload: MidiSendPayload) => Promise<unknown>
-  ) {
-    const spacingMs = 6;
-    batch.slice(0, 512).forEach((payload, idx) => {
-      window.setTimeout(() => {
-        void sender(payload);
-      }, idx * spacingMs);
-    });
-  }
-
-  async function sendSnapshotNow() {
+  async function sendSnapshotNow(snapshotId: string) {
     if (!midiApi) return;
-    const batches: { portId: string; msg: MidiMsg }[] = [];
-    devices.forEach((device) => {
-      if (!device.outputId) return;
-      controls.forEach((control) => {
-        control.slots.forEach((slot) => {
-          if (!slot?.enabled || slot.kind !== "cc") return;
-          const targetId = slot.targetDeviceId ?? device.id;
-          if (targetId !== device.id) return;
-          batches.push({
-            portId: device.outputId!,
-            msg: {
-              t: "cc",
-              ch: clampChannel(slot.channel ?? device.channel),
-              cc: slot.cc ?? 0,
-              val: slot.max ?? 127,
-            },
-          });
-        });
-      });
-    });
-    scheduleBurstSend(batches, (payload) => midiApi.send(payload));
+    const found = findSnapshotSlot(snapshotId, snapshotsState);
+    if (!found?.slot.snapshot) return;
+    const payload: SnapshotRecallPayload = {
+      snapshot: found.slot.snapshot,
+      strategy: snapshotMode,
+      fadeMs: snapshotFadeMs,
+      commitDelayMs: 0,
+      burst: snapshotsState.burst,
+    };
+    await midiApi.recallSnapshot(payload);
   }
 
   function clearSnapshotTimer() {
@@ -1424,25 +1440,23 @@ export function App() {
     }
   }
 
-  function triggerSnapshot(name: string) {
+  function triggerSnapshot(snapshotId: string) {
     clearSnapshotTimer();
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
     const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
-    const shouldDelay = snapshotMode === "commit" && qMs > 0;
-    const waitMs = shouldDelay ? qMs : qMs;
-    if (qMs === 0 || snapshotMode === "jump") {
-      setActiveSnapshot(name);
-      void sendSnapshotNow();
-      setPendingSnapshot(null);
+    if (qMs === 0) {
+      setActiveSnapshotId(snapshotId);
+      void sendSnapshotNow(snapshotId);
+      setPendingSnapshotId(null);
       return;
     }
-    setPendingSnapshot(name);
+    setPendingSnapshotId(snapshotId);
     snapshotTimerRef.current = window.setTimeout(() => {
-      setActiveSnapshot(name);
-      void sendSnapshotNow();
-      setPendingSnapshot(null);
+      setActiveSnapshotId(snapshotId);
+      void sendSnapshotNow(snapshotId);
+      setPendingSnapshotId(null);
       snapshotTimerRef.current = null;
-    }, waitMs);
+    }, qMs);
   }
 
   function playChainStep(idx: number) {
@@ -1453,7 +1467,13 @@ export function App() {
       return;
     }
     setChainIndex(idx);
-    triggerSnapshot(chainSteps[idx].snapshot);
+    const snapshotId = findSnapshotIdByName(
+      chainSteps[idx].snapshot,
+      snapshotsState
+    );
+    if (snapshotId) {
+      triggerSnapshot(snapshotId);
+    }
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
     const delayMs =
       quantizeToMs(snapshotQuantize, effectiveBpm) *
@@ -1485,12 +1505,15 @@ export function App() {
     }
     setChainPlaying(false);
     setChainIndex(0);
-    setPendingSnapshot(null);
+    setPendingSnapshotId(null);
   }
 
   function addChainStep() {
-    if (snapshots.length === 0) return;
-    const snapshot = activeSnapshot ?? snapshots[0];
+    const activeSlotName = activeSnapshotId
+      ? findSnapshotSlot(activeSnapshotId, snapshotsState)?.slot.name ?? null
+      : null;
+    const snapshot = activeSlotName ?? snapshotsState.banks[0]?.slots[0]?.name;
+    if (!snapshot) return;
     setChainSteps((current) => [...current, { snapshot, bars: 4 }]);
   }
 
@@ -1543,7 +1566,7 @@ export function App() {
       snapshotMode,
       snapshotFadeMs,
       chainSteps,
-      snapshots: defaults.snapshots,
+      snapshots: snapshotsState,
       devices,
       routes,
       controls,
@@ -1636,6 +1659,10 @@ export function App() {
             onQuickStart={quickStart}
             loadingPorts={loadingPorts}
             logCapReached={logCapReached}
+            sessionStatus={sessionStatus}
+            onSessionStart={() => void startSessionRecording()}
+            onSessionStop={() => void stopSessionRecording()}
+            onSessionReveal={() => void revealSessionLog()}
             monitorRows={monitorRows}
             clearLog={clearLog}
             controls={controls}
@@ -1659,14 +1686,39 @@ export function App() {
             onQuickProgram={(portId, ch, program) =>
               sendQuickProgram(portId, ch, program)
             }
-            onSendSnapshot={sendSnapshotNow}
+            onSendSnapshot={() => {
+              if (!activeSnapshotId) return;
+              void sendSnapshotNow(activeSnapshotId);
+            }}
             onAddDeviceRoutes={addDeviceRoutes}
             updateControl={updateControl}
             onEmitControl={emitControl}
-            snapshots={snapshots}
-            activeSnapshot={activeSnapshot}
+            snapshots={snapshotsState}
+            activeSnapshotId={activeSnapshotId}
             onSelectSnapshot={triggerSnapshot}
-            pendingSnapshot={pendingSnapshot}
+            pendingSnapshotId={pendingSnapshotId}
+            onCaptureSnapshot={(snapshotId) => {
+              if (!midiApi) return;
+              const effectiveBpm =
+                useClockSync && clockBpm ? clockBpm : tempoBpm;
+              void midiApi
+                .captureSnapshot({
+                  bpm: effectiveBpm,
+                  notes: snapshotsState.captureNotes,
+                })
+                .then((snapshot) => {
+                  setSnapshotsState((current) =>
+                    writeSnapshotToSlot(current, snapshotId, snapshot)
+                  );
+                });
+            }}
+            onCancelPendingSnapshot={() => {
+              clearSnapshotTimer();
+              setPendingSnapshotId(null);
+            }}
+            onChangeSnapshotBank={(bankId) =>
+              setSnapshotsState((current) => ({ ...current, activeBankId: bankId }))
+            }
             snapshotQuantize={snapshotQuantize}
             snapshotMode={snapshotMode}
             onChangeSnapshotQuantize={setSnapshotQuantize}
@@ -2098,10 +2150,13 @@ function MainContentArea(props: {
   ) => void;
   onSendSnapshot: () => void;
   onAddDeviceRoutes: () => void;
-  snapshots: string[];
-  activeSnapshot: string | null;
-  onSelectSnapshot: (name: string) => void;
-  pendingSnapshot: string | null;
+  snapshots: SnapshotsState;
+  activeSnapshotId: string | null;
+  pendingSnapshotId: string | null;
+  onSelectSnapshot: (snapshotId: string) => void;
+  onCaptureSnapshot: (snapshotId: string) => void;
+  onCancelPendingSnapshot: () => void;
+  onChangeSnapshotBank: (bankId: string | null) => void;
   snapshotQuantize: SnapshotQuantize;
   snapshotMode: SnapshotMode;
   onChangeSnapshotQuantize: (q: SnapshotQuantize) => void;
@@ -2118,6 +2173,10 @@ function MainContentArea(props: {
   onMoveChainStep: (from: number, to: number) => void;
   onUpdateChainBars: (index: number, bars: number) => void;
   logCapReached: boolean;
+  sessionStatus: SessionLogStatus | null;
+  onSessionStart: () => void;
+  onSessionStop: () => void;
+  onSessionReveal: () => void;
   monitorRows: {
     _rowId: string;
     ts: number;
@@ -2201,9 +2260,12 @@ function RouteOutlet({
       return (
         <SnapshotsPage
           snapshots={rest.snapshots}
-          activeSnapshot={rest.activeSnapshot}
-          pendingSnapshot={rest.pendingSnapshot}
+          activeSnapshotId={rest.activeSnapshotId}
+          pendingSnapshotId={rest.pendingSnapshotId}
           onSelectSnapshot={rest.onSelectSnapshot}
+          onCapture={rest.onCaptureSnapshot}
+          onCancelPending={rest.onCancelPendingSnapshot}
+          onChangeBank={rest.onChangeSnapshotBank}
           snapshotQuantize={rest.snapshotQuantize}
           snapshotMode={rest.snapshotMode}
           onChangeSnapshotQuantize={rest.onChangeSnapshotQuantize}
@@ -2213,14 +2275,24 @@ function RouteOutlet({
         />
       );
     case "stage":
-      return (
-        <StagePage
-          clock={rest.clock}
-          snapshots={rest.snapshots}
-          activeSnapshot={rest.activeSnapshot}
-          onSelectSnapshot={rest.onSelectSnapshot}
-        />
-      );
+      {
+        const snapshotNames = listSnapshotNames(rest.snapshots);
+        const activeName = rest.activeSnapshotId
+          ? findSnapshotSlot(rest.activeSnapshotId, rest.snapshots)?.slot.name ??
+            null
+          : null;
+        return (
+          <StagePage
+            clock={rest.clock}
+            snapshots={snapshotNames}
+            activeSnapshot={activeName}
+            onSelectSnapshot={(name) => {
+              const id = findSnapshotIdByName(name, rest.snapshots);
+              if (id) rest.onSelectSnapshot(id);
+            }}
+          />
+        );
+      }
     case "chains":
       return (
         <ChainsPage
@@ -2242,6 +2314,10 @@ function RouteOutlet({
           monitorRows={rest.monitorRows}
           logCapReached={rest.logCapReached}
           clearLog={rest.clearLog}
+          sessionStatus={rest.sessionStatus}
+          onSessionStart={rest.onSessionStart}
+          onSessionStop={rest.onSessionStop}
+          onSessionReveal={rest.onSessionReveal}
         />
       );
     case "surfaces":
@@ -2265,9 +2341,12 @@ function RouteOutlet({
       return (
         <SnapshotsPage
           snapshots={rest.snapshots}
-          activeSnapshot={rest.activeSnapshot}
-          pendingSnapshot={rest.pendingSnapshot}
+          activeSnapshotId={rest.activeSnapshotId}
+          pendingSnapshotId={rest.pendingSnapshotId}
           onSelectSnapshot={rest.onSelectSnapshot}
+          onCapture={rest.onCaptureSnapshot}
+          onCancelPending={rest.onCancelPendingSnapshot}
+          onChangeBank={rest.onChangeSnapshotBank}
           snapshotQuantize={rest.snapshotQuantize}
           snapshotMode={rest.snapshotMode}
           onChangeSnapshotQuantize={rest.onChangeSnapshotQuantize}
@@ -3223,11 +3302,68 @@ function MappingPage({
   );
 }
 
+function makeSnapshotId(bankId: string, slotId: string) {
+  return `${bankId}:${slotId}`;
+}
+
+function parseSnapshotId(snapshotId: string): { bankId: string; slotId: string } | null {
+  const idx = snapshotId.indexOf(":");
+  if (idx <= 0) return null;
+  return { bankId: snapshotId.slice(0, idx), slotId: snapshotId.slice(idx + 1) };
+}
+
+function findSnapshotSlot(
+  snapshotId: string,
+  state: SnapshotsState
+): { bank: SnapshotsState["banks"][number]; slot: SnapshotsState["banks"][number]["slots"][number] } | null {
+  const parsed = parseSnapshotId(snapshotId);
+  if (!parsed) return null;
+  const bank = state.banks.find((b) => b.id === parsed.bankId);
+  if (!bank) return null;
+  const slot = bank.slots.find((s) => s.id === parsed.slotId);
+  if (!slot) return null;
+  return { bank, slot };
+}
+
+function findSnapshotIdByName(name: string, state: SnapshotsState): string | null {
+  for (const bank of state.banks) {
+    for (const slot of bank.slots) {
+      if (slot.name === name) return makeSnapshotId(bank.id, slot.id);
+    }
+  }
+  return null;
+}
+
+function listSnapshotNames(state: SnapshotsState): string[] {
+  const bank =
+    state.banks.find((b) => b.id === state.activeBankId) ?? state.banks[0];
+  return (bank?.slots ?? []).map((s) => s.name);
+}
+
+function writeSnapshotToSlot(state: SnapshotsState, snapshotId: string, snapshot: SnapshotState): SnapshotsState {
+  const parsed = parseSnapshotId(snapshotId);
+  if (!parsed) return state;
+  const nextBanks = state.banks.map((b) => {
+    if (b.id !== parsed.bankId) return b;
+    return {
+      ...b,
+      slots: b.slots.map((s) => {
+        if (s.id !== parsed.slotId) return s;
+        return { ...s, snapshot, lastCapturedAt: Date.now() };
+      }),
+    };
+  });
+  return { ...state, banks: nextBanks };
+}
+
 function SnapshotsPage({
   snapshots,
-  activeSnapshot,
-  pendingSnapshot,
+  activeSnapshotId,
+  pendingSnapshotId,
   onSelectSnapshot,
+  onCapture,
+  onCancelPending,
+  onChangeBank,
   snapshotQuantize,
   snapshotMode,
   onChangeSnapshotQuantize,
@@ -3235,10 +3371,13 @@ function SnapshotsPage({
   snapshotFadeMs,
   onChangeSnapshotFade,
 }: {
-  snapshots: string[];
-  activeSnapshot: string | null;
-  pendingSnapshot: string | null;
-  onSelectSnapshot: (name: string) => void;
+  snapshots: SnapshotsState;
+  activeSnapshotId: string | null;
+  pendingSnapshotId: string | null;
+  onSelectSnapshot: (snapshotId: string) => void;
+  onCapture: (snapshotId: string) => void;
+  onCancelPending: () => void;
+  onChangeBank: (bankId: string | null) => void;
   snapshotQuantize: SnapshotQuantize;
   snapshotMode: SnapshotMode;
   onChangeSnapshotQuantize: (q: SnapshotQuantize) => void;
@@ -3246,6 +3385,18 @@ function SnapshotsPage({
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
 }) {
+  const activeSlot = activeSnapshotId
+    ? findSnapshotSlot(activeSnapshotId, snapshots)
+    : null;
+  const pendingSlot = pendingSnapshotId
+    ? findSnapshotSlot(pendingSnapshotId, snapshots)
+    : null;
+
+  const activeBank =
+    snapshots.banks.find((b) => b.id === snapshots.activeBankId) ??
+    snapshots.banks[0] ??
+    null;
+
   const colors = [
     "#38bdf8",
     "#f472b6",
@@ -3263,6 +3414,18 @@ function SnapshotsPage({
         title="Snapshots & Transitions"
         right={
           <div style={styles.row}>
+            <span style={styles.muted}>Bank</span>
+            <select
+              style={styles.select}
+              value={snapshots.activeBankId ?? ""}
+              onChange={(e) => onChangeBank(e.target.value || null)}
+            >
+              {snapshots.banks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
             <span style={styles.muted}>Fade</span>
             <input
               style={styles.inputNarrow}
@@ -3294,16 +3457,21 @@ function SnapshotsPage({
             </select>
             <button
               style={styles.btnPrimary}
-              onClick={() => activeSnapshot && onSelectSnapshot(activeSnapshot)}
+              onClick={() => activeSnapshotId && onSelectSnapshot(activeSnapshotId)}
             >
               Send Snapshot
             </button>
-            {pendingSnapshot ? (
+            <button
+              style={styles.btnSecondary}
+              onClick={() => activeSnapshotId && onCapture(activeSnapshotId)}
+              disabled={!activeSnapshotId}
+            >
+              Capture
+            </button>
+            {pendingSnapshotId ? (
               <button
                 style={styles.btnSecondary}
-                onClick={() =>
-                  onSelectSnapshot(activeSnapshot ?? pendingSnapshot)
-                }
+                onClick={onCancelPending}
               >
                 Cancel Pending
               </button>
@@ -3320,14 +3488,21 @@ function SnapshotsPage({
               gap: 12,
             }}
           >
-            {snapshots.map((t, idx) => {
+            {(activeBank?.slots ?? []).map((slot, idx) => {
+              const id = activeBank ? makeSnapshotId(activeBank.id, slot.id) : slot.id;
               const color = colors[idx % colors.length];
-              const isActive = activeSnapshot === t;
-              const isPending = pendingSnapshot === t;
+              const isActive = activeSnapshotId === id;
+              const isPending = pendingSnapshotId === id;
               return (
                 <button
-                  key={t}
-                  onClick={() => onSelectSnapshot(t)}
+                  key={id}
+                  onClick={(e) => {
+                    if (e.shiftKey) {
+                      onCapture(id);
+                      return;
+                    }
+                    onSelectSnapshot(id);
+                  }}
                   style={{
                     height: 96,
                     borderRadius: 14,
@@ -3341,7 +3516,7 @@ function SnapshotsPage({
                     boxShadow: isActive ? "0 0 20px rgba(0,0,0,0.35)" : "none",
                     position: "relative",
                   }}
-                >
+                  >
                   <div
                     style={{
                       position: "absolute",
@@ -3351,7 +3526,7 @@ function SnapshotsPage({
                       color: "#cbd5e1",
                     }}
                   >
-                    {t}
+                    {slot.name}
                   </div>
                   <div
                     style={{
@@ -3372,14 +3547,14 @@ function SnapshotsPage({
             </div>
           </div>
         </Panel>
-        <Panel title={`Selected: ${activeSnapshot ?? "None"}`}>
+        <Panel title={`Selected: ${activeSlot?.slot.name ?? "None"}`}>
           <div style={styles.card}>
             <div style={styles.row}>
               <span style={{ color: "#35c96a", fontSize: "12px" }}>
-                {activeSnapshot ? "* Active" : "* Idle"}
+                {activeSlot ? "* Active" : "* Idle"}
               </span>
-              {pendingSnapshot ? (
-                <span style={styles.muted}>Pending: {pendingSnapshot}</span>
+              {pendingSlot ? (
+                <span style={styles.muted}>Pending: {pendingSlot.slot.name}</span>
               ) : null}
             </div>
             <div style={styles.row}>
@@ -3397,7 +3572,7 @@ function SnapshotsPage({
               <div style={{ ...styles.pillRow, border: "1px solid #1f2937" }}>
                 <span style={styles.muted}>A</span>
                 <select style={styles.select}>
-                  {snapshots.map((s) => (
+                  {listSnapshotNames(snapshots).map((s) => (
                     <option key={`a-${s}`}>{s}</option>
                   ))}
                 </select>
@@ -3405,7 +3580,7 @@ function SnapshotsPage({
               <div style={{ ...styles.pillRow, border: "1px solid #1f2937" }}>
                 <span style={styles.muted}>B</span>
                 <select style={styles.select}>
-                  {snapshots.map((s) => (
+                  {listSnapshotNames(snapshots).map((s) => (
                     <option key={`b-${s}`}>{s}</option>
                   ))}
                 </select>
@@ -3426,8 +3601,14 @@ function SnapshotsPage({
         <span style={{ fontSize: "11px", fontWeight: "bold" }}>
           NEXT ACTION:
         </span>
-        <span style={styles.pill}>CHORUS 1 @ Bar 64</span>
-        <button style={styles.btnTiny}>Cancel</button>
+        <span style={styles.pill}>
+          {pendingSlot ? `Pending: ${pendingSlot.slot.name}` : "Idle"}
+        </span>
+        {pendingSlot ? (
+          <button style={styles.btnTiny} onClick={onCancelPending}>
+            Cancel
+          </button>
+        ) : null}
       </div>
     </Page>
   );
@@ -3580,6 +3761,10 @@ function MonitorPage({
   monitorRows,
   logCapReached,
   clearLog,
+  sessionStatus,
+  onSessionStart,
+  onSessionStop,
+  onSessionReveal,
 }: {
   monitorRows: {
     _rowId: string;
@@ -3589,6 +3774,10 @@ function MonitorPage({
   }[];
   logCapReached: boolean;
   clearLog: () => void;
+  sessionStatus: SessionLogStatus | null;
+  onSessionStart: () => void;
+  onSessionStop: () => void;
+  onSessionReveal: () => void;
 }) {
   return (
     <Page>
@@ -3596,7 +3785,25 @@ function MonitorPage({
         title="MIDI Monitor"
         right={
           <div style={styles.row}>
+            {sessionStatus?.active ? (
+              <span style={{ ...styles.pill, borderColor: "#ef4444", color: "#fecaca" }}>
+                REC
+              </span>
+            ) : null}
             {logCapReached ? <span style={styles.pill}>Log capped</span> : null}
+            <button
+              style={styles.btnSecondary}
+              onClick={sessionStatus?.active ? onSessionStop : onSessionStart}
+            >
+              {sessionStatus?.active ? "Stop Recording" : "Start Recording"}
+            </button>
+            <button
+              style={styles.btnSecondary}
+              onClick={onSessionReveal}
+              disabled={!sessionStatus?.filePath}
+            >
+              Reveal Log
+            </button>
             <button style={styles.btnSecondary} onClick={clearLog}>
               Clear Log
             </button>
@@ -3604,6 +3811,11 @@ function MonitorPage({
         }
       />
       <Panel title="Real-time Traffic">
+        {sessionStatus?.filePath ? (
+          <div style={{ ...styles.muted, marginBottom: 8 }}>
+            Session log: {sessionStatus.filePath} ({sessionStatus.eventCount} lines)
+          </div>
+        ) : null}
         <div
           style={{
             height: "400px",

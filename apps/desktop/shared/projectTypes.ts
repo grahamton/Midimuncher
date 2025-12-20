@@ -158,9 +158,19 @@ export type ProjectState = ProjectStateV2;
 export type ProjectDoc = ProjectDocV2;
 
 function defaultSnapshotSlots(): SnapshotSlotState[] {
+  const bankANames = [
+    "INTRO",
+    "VERSE",
+    "CHORUS 1",
+    "BUILD",
+    "DROP!!",
+    "OUTRO",
+    "SOLO",
+    "BREAK",
+  ];
   return Array.from({ length: 8 }, (_v, idx) => ({
     id: `slot-${idx + 1}`,
-    name: `Slot ${idx + 1}`,
+    name: bankANames[idx] ?? `Slot ${idx + 1}`,
     lastCapturedAt: null,
     snapshot: null,
     notes: "",
@@ -170,7 +180,17 @@ function defaultSnapshotSlots(): SnapshotSlotState[] {
 function defaultSnapshotBanks(): SnapshotBankState[] {
   return [
     { id: "bank-1", name: "Bank A", slots: defaultSnapshotSlots() },
-    { id: "bank-2", name: "Bank B", slots: defaultSnapshotSlots() },
+    {
+      id: "bank-2",
+      name: "Bank B",
+      slots: Array.from({ length: 8 }, (_v, idx) => ({
+        id: `slot-${idx + 1}`,
+        name: `Slot ${idx + 1}`,
+        lastCapturedAt: null,
+        snapshot: null,
+        notes: "",
+      })),
+    },
   ];
 }
 
@@ -181,7 +201,7 @@ export function defaultSnapshotsState(): SnapshotsState {
     strategy: "jump",
     fadeMs: 220,
     commitDelayMs: 500,
-    burst: { intervalMs: 25, maxPerInterval: 12 },
+    burst: { intervalMs: 6, maxPerInterval: 1 },
     captureNotes: "",
     banks,
   };
@@ -340,6 +360,13 @@ function clampStepLength(value: unknown, fallback: number): number {
   const length = Math.round(asNumberOr(value, fallback));
   if (!Number.isFinite(length)) return fallback;
   return Math.min(Math.max(length, 1), MAX_SEQUENCER_STEPS);
+}
+
+function clampMs(value: unknown, fallback: number, max = 60_000): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const ms = Math.round(value);
+  if (ms < 0) return fallback;
+  return Math.min(ms, max);
 }
 
 function clampGateMs(value: unknown, fallback: number): number {
@@ -553,11 +580,8 @@ function coerceSnapshotsState(raw: unknown): SnapshotsState {
 
   const strategy: SnapshotRecallStrategy =
     rec.strategy === "commit" ? "commit" : "jump";
-  const fadeMs = Math.max(0, asNumberOr(rec.fadeMs, defaults.fadeMs));
-  const commitDelayMs = Math.max(
-    0,
-    asNumberOr(rec.commitDelayMs, defaults.commitDelayMs)
-  );
+  const fadeMs = clampMs(rec.fadeMs, defaults.fadeMs);
+  const commitDelayMs = clampMs(rec.commitDelayMs, defaults.commitDelayMs);
 
   const burstDefaults = defaults.burst;
   const burstRec = (
@@ -566,13 +590,10 @@ function coerceSnapshotsState(raw: unknown): SnapshotsState {
       : {}
   ) as Record<string, unknown>;
   const burst: SnapshotBurstLimit = {
-    intervalMs: Math.max(
-      1,
-      asNumberOr(burstRec.intervalMs, burstDefaults.intervalMs)
-    ),
+    intervalMs: Math.max(1, clampMs(burstRec.intervalMs, burstDefaults.intervalMs)),
     maxPerInterval: Math.max(
       1,
-      asNumberOr(burstRec.maxPerInterval, burstDefaults.maxPerInterval)
+      Math.round(asNumberOr(burstRec.maxPerInterval, burstDefaults.maxPerInterval))
     ),
   };
 
@@ -650,9 +671,9 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     (raw as any)?.snapshotMode,
     stateDefaults.snapshotMode
   );
-  const snapshotFadeMs = Math.max(
-    0,
-    asNumberOr((raw as any)?.snapshotFadeMs, stateDefaults.snapshotFadeMs)
+  const snapshotFadeMs = clampMs(
+    (raw as any)?.snapshotFadeMs,
+    stateDefaults.snapshotFadeMs
   );
 
   const activeView = sanitizeAppViewV1(raw.activeView);
