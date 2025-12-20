@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { computeMappingSends } from "../../src/mapping/engine";
+import { computeMappingSends, resolveSlotTargets } from "../../src/mapping/engine";
 import type { ControlElement, MappingSlot } from "../../src/mapping/types";
 
 function buildControl(slots: MappingSlot[]): ControlElement {
@@ -68,6 +68,49 @@ describe("computeMappingSends", () => {
         portId: "port-2",
         msg: { t: "noteOff", ch: 16, note: 127, vel: 0 }
       }
+    ]);
+  });
+
+  it("sends to multiple targets with per-target overrides and broadcast fallback", () => {
+    const control = buildControl([
+      {
+        enabled: true,
+        kind: "cc",
+        cc: 10,
+        min: 0,
+        max: 100,
+        curve: "linear",
+        targets: [
+          { deviceId: "dev-1", channel: 5, cc: 42 },
+          { deviceId: "dev-2" }
+        ]
+      },
+      {
+        enabled: true,
+        kind: "pc",
+        min: 0,
+        max: 10,
+        curve: "linear",
+        broadcast: true
+      }
+    ]);
+
+    const devices = [
+      { id: "dev-1", outputId: "port-1", channel: 1 },
+      { id: "dev-2", outputId: "port-2", channel: 2 },
+      { id: "dev-3", outputId: "port-3", channel: 3 }
+    ];
+
+    assert.deepStrictEqual(resolveSlotTargets(control.slots[0], devices).length, 2);
+
+    const sends = computeMappingSends(control, 64, devices);
+
+    assert.deepStrictEqual(sends, [
+      { portId: "port-1", msg: { t: "cc", ch: 5, cc: 42, val: 50 } },
+      { portId: "port-2", msg: { t: "cc", ch: 2, cc: 10, val: 50 } },
+      { portId: "port-1", msg: { t: "programChange", ch: 1, program: 5 } },
+      { portId: "port-2", msg: { t: "programChange", ch: 2, program: 5 } },
+      { portId: "port-3", msg: { t: "programChange", ch: 3, program: 5 } }
     ]);
   });
 });

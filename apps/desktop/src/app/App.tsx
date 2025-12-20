@@ -22,8 +22,8 @@ import {
   Trash2,
   Zap
 } from "lucide-react";
-import { buildPanicMessages, defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
-import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
+import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES, resolveSlotTargets } from "@midi-playground/core";
+import type { ControlElement, Curve, MappingSlot, MappingSlotTarget, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
   MidiPortInfo,
@@ -41,9 +41,7 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
-import { StagePage } from "./StagePage";
 import { ControlLabPage } from "./ControlLabPage";
-import { StagePage } from "./stage/StagePage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
 import { quantizeToMs } from "./lib/tempo";
 
@@ -52,7 +50,6 @@ const MAX_DEVICES = 8;
 const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
 const CLOCK_PPQN = 24;
-const PANIC_THROTTLE_MS = 750;
 
 const styles = {
   window: {
@@ -467,7 +464,6 @@ export function App() {
   const learnTargetRef = useRef<{ controlId: string; slotIndex: number } | null>(null);
   const [learnStatus, setLearnStatus] = useState<"idle" | "listening" | "captured" | "timeout">("idle");
   const learnTimerRef = useRef<number | null>(null);
-  const panicCooldownRef = useRef<number | null>(null);
 
   useEffect(() => {
     selectedInRef.current = selectedIn;
@@ -586,6 +582,8 @@ export function App() {
                   min: 0,
                   max: 127,
                   curve: "linear",
+                  targets: fallbackTarget ? [{ deviceId: fallbackTarget }] : [],
+                  broadcast: false,
                   targetDeviceId: fallbackTarget
                 };
               } else {
@@ -594,6 +592,13 @@ export function App() {
                   enabled: true,
                   cc: clampMidi(evt.msg.cc),
                   channel: clampChannel(evt.msg.ch),
+                  targets:
+                    existing.targets?.length
+                      ? existing.targets
+                      : fallbackTarget
+                        ? [{ deviceId: fallbackTarget }]
+                        : [],
+                  broadcast: existing.broadcast ?? false,
                   targetDeviceId: existing.targetDeviceId ?? fallbackTarget
                 };
               }
@@ -864,60 +869,18 @@ export function App() {
   }
 
   async function panicAll() {
-    if (!midiApi) {
-      console.warn("Panic requested but MIDI API is unavailable");
-      return;
-    }
-
-    const now = Date.now();
-    const lastTs = panicCooldownRef.current ?? 0;
-    if (now - lastTs < PANIC_THROTTLE_MS) {
-      console.info("Panic suppressed by throttle", { deltaMs: now - lastTs });
-      return;
-    }
-    panicCooldownRef.current = now;
-
-    const portChannels = new Map<string, Set<number>>();
-    devices.forEach((device) => {
-      if (!device.outputId) return;
-      const bucket = portChannels.get(device.outputId) ?? new Set<number>();
-      bucket.add(clampChannel(device.channel));
-      portChannels.set(device.outputId, bucket);
-    });
-
-    if (!portChannels.size && selectedOut) {
-      portChannels.set(
-        selectedOut,
-        new Set(Array.from({ length: 16 }, (_, idx) => idx + 1))
-      );
-    }
-
-    const panicEvents: MidiEvent[] = [];
-    for (const [portId, channels] of portChannels.entries()) {
-      const targets = channels.size
-        ? Array.from(channels)
-        : Array.from({ length: 16 }, (_, idx) => idx + 1);
-      const msgs = buildPanicMessages(targets);
-      for (const msg of msgs) {
-        await midiApi.send({ portId, msg });
-        panicEvents.push({
-          ts: now,
-          src: { id: `panic:${portId}`, name: `Panic → ${portName(portId)}`, kind: "virtual" },
-          msg
-        });
+    if (!midiApi) return;
+    const panicSrc: MidiPortInfo = { id: "panic", name: "Panic", direction: "out" };
+    const ts = Date.now();
+    setLog((current) => [{ ts, src: panicSrc, msg: { t: "stop" } as MidiMsg }, ...current].slice(0, LOG_LIMIT));
+    const outs = ports.outputs;
+    for (const out of outs) {
+      for (let ch = 1; ch <= 16; ch++) {
+        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
+        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
       }
+      await midiApi.send({ portId: out.id, msg: { t: "stop" } });
     }
-
-    if (panicEvents.length) {
-      setLog((current) => [...panicEvents, ...current].slice(0, LOG_LIMIT));
-    }
-    console.info("Panic dispatched", {
-      targets: Array.from(portChannels.entries()).map(([portId, ch]) => ({
-        portId,
-        channels: Array.from(ch)
-      })),
-      count: panicEvents.length
-    });
   }
 
   async function resetProject() {
@@ -1250,7 +1213,7 @@ export function App() {
         const slots = [...c.slots];
         const existing = slots[slotIndex];
         if (!existing) return c;
-        slots[slotIndex] = { ...(existing as any), ...(partial as any) } as MappingSlot;
+        slots[slotIndex] = withTargetDefaults({ ...(existing as any), ...(partial as any) } as MappingSlot);
         return { ...c, slots };
       })
     );
@@ -1282,16 +1245,19 @@ export function App() {
   async function sendSnapshotNow() {
     if (!midiApi) return;
     const batches: { portId: string; msg: MidiMsg }[] = [];
-    devices.forEach((device) => {
-      if (!device.outputId) return;
-      controls.forEach((control) => {
-        control.slots.forEach((slot) => {
-          if (!slot?.enabled || slot.kind !== "cc") return;
-          const targetId = slot.targetDeviceId ?? device.id;
-          if (targetId !== device.id) return;
+    controls.forEach((control) => {
+      control.slots.forEach((slot) => {
+        if (!slot?.enabled || slot.kind !== "cc") return;
+        const normalized = withTargetDefaults(slot);
+        const slotTargets = resolveSlotTargets(normalized, devices);
+        slotTargets.forEach(({ device: targetDevice, target }) => {
+          if (!targetDevice.outputId) return;
+          const channel = clampChannel(target?.channel ?? normalized.channel ?? targetDevice.channel);
+          const cc = clampMidi(target?.cc ?? normalized.cc ?? 0);
+          const value = clampMidi(normalized.max ?? 127);
           batches.push({
-            portId: device.outputId!,
-            msg: { t: "cc", ch: clampChannel(slot.channel ?? device.channel), cc: slot.cc ?? 0, val: slot.max ?? 127 }
+            portId: targetDevice.outputId,
+            msg: { t: "cc", ch: channel, cc, val: value }
           });
         });
       });
@@ -1508,7 +1474,6 @@ export function App() {
           onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
           onSendSnapshot={sendSnapshotNow}
           onAddDeviceRoutes={addDeviceRoutes}
-          onPanic={panicAll}
           updateControl={updateControl}
           onEmitControl={emitControl}
           snapshots={snapshots}
@@ -1820,9 +1785,7 @@ function LeftNavRail({
   onPanic: () => void;
 }) {
   const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
-    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
-    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
     { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
@@ -1889,7 +1852,6 @@ function MainContentArea(props: {
   onQuickProgram: (portId: string | null, channel: number, program: number) => void;
   onSendSnapshot: () => void;
   onAddDeviceRoutes: () => void;
-  onPanic: () => void;
   updateControl?: (id: string, partial: Partial<ControlElement>) => void;
   onEmitControl?: (control: ControlElement, rawValue: number) => void;
   snapshots: string[];
@@ -1938,8 +1900,6 @@ function MainContentArea(props: {
 
 function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) {
   switch (route) {
-    case "stage":
-      return <StagePage devices={rest.devices} onPanic={rest.onPanic} />;
     case "setup":
       return (
         <SetupPage
@@ -2021,8 +1981,6 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onEmitControl={(control, raw) => rest.onEmitControl?.(control, raw)}
         />
       );
-    case "stage":
-      return <StagePage />;
     case "settings":
       return (
         <SettingsPage
@@ -2372,6 +2330,8 @@ function SetupPage({
                       min: wizardMin,
                       max: wizardMax,
                       curve: wizardCurve,
+                      targets: wizardDeviceId ? [{ deviceId: wizardDeviceId }] : [],
+                      broadcast: false,
                       targetDeviceId: wizardDeviceId
                     });
                   });
@@ -2434,7 +2394,9 @@ function MappingPage({
   ccValue: number;
   devices: DeviceConfig[];
 }) {
-  const targetDevice = devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ?? devices[0];
+  const firstSlot = selectedControl?.slots[0];
+  const firstSlotTargetId = firstSlot ? primaryTargetId(firstSlot) : null;
+  const targetDevice = devices.find((d) => d.id === firstSlotTargetId) ?? devices[0];
   const targetProfile = targetDevice ? getInstrumentProfile(targetDevice.instrumentId) : null;
   const [showWizard, setShowWizard] = useState(false);
   const [wizardSelected, setWizardSelected] = useState<number[]>([]);
@@ -2456,6 +2418,8 @@ function MappingPage({
       kind: "cc",
       cc: clampMidi(ccNumber),
       enabled: true,
+      targets: targetDevice ? [{ deviceId: targetDevice.id }] : [],
+      broadcast: false,
       targetDeviceId: targetDevice?.id ?? null,
       channel: clampChannel(targetDevice?.channel ?? 1)
     });
@@ -2471,6 +2435,8 @@ function MappingPage({
         min: t.min,
         max: t.max,
         curve: t.curve,
+        targets: targetDevice ? [{ deviceId: targetDevice.id }] : [],
+        broadcast: false,
         targetDeviceId: targetDevice?.id ?? null,
         channel: clampChannel(targetDevice?.channel ?? 1)
       });
@@ -2478,6 +2444,32 @@ function MappingPage({
     if (updateControl) {
       updateControl(selectedControl.id, { label: `${selectedControl.label} (macro x${macroTargets.length})` });
     }
+  }
+
+  function addTarget(slotIndex: number) {
+    if (!selectedControl) return;
+    const deviceId = devices[0]?.id;
+    if (!deviceId) return;
+    const currentSlot = selectedControl.slots[slotIndex];
+    if (!currentSlot) return;
+    const nextTargets = [...slotTargets(currentSlot), { deviceId }];
+    updateSlot(selectedControl.id, slotIndex, { targets: nextTargets, targetDeviceId: nextTargets[0]?.deviceId ?? null });
+  }
+
+  function updateTarget(slotIndex: number, targetIndex: number, partial: Partial<MappingSlotTarget>) {
+    if (!selectedControl) return;
+    const currentSlot = selectedControl.slots[slotIndex];
+    if (!currentSlot) return;
+    const nextTargets = slotTargets(currentSlot).map((t, idx) => (idx === targetIndex ? { ...t, ...partial } : t));
+    updateSlot(selectedControl.id, slotIndex, { targets: nextTargets, targetDeviceId: nextTargets[0]?.deviceId ?? null });
+  }
+
+  function removeTarget(slotIndex: number, targetIndex: number) {
+    if (!selectedControl) return;
+    const currentSlot = selectedControl.slots[slotIndex];
+    if (!currentSlot) return;
+    const nextTargets = slotTargets(currentSlot).filter((_, idx) => idx !== targetIndex);
+    updateSlot(selectedControl.id, slotIndex, { targets: nextTargets, targetDeviceId: nextTargets[0]?.deviceId ?? null });
   }
 
   function nudgeControl(next: number) {
@@ -2568,12 +2560,10 @@ function MappingPage({
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(selectedControl ? selectedControl.slots : []).map((slot, idx) => {
-              const deviceName =
-                devices.find((d) => d.id === slot.targetDeviceId)?.name ??
-                (slot.targetDeviceId ? `Device ${slot.targetDeviceId}` : "No target");
               const isCc = slot.kind === "cc";
               const isPc = slot.kind === "pc";
               const isNote = slot.kind === "note";
+              const targets = slotTargets(slot);
               return (
                 <div key={idx} style={styles.tableRow}>
                   <span style={styles.cellSmall}>S{idx + 1}</span>
@@ -2684,23 +2674,74 @@ function MappingPage({
                       />
                     </>
                   ) : null}
-                  <select
-                    style={styles.select}
-                    value={slot.targetDeviceId ?? ""}
-                    onChange={(e) =>
-                      updateSlot(selectedControl!.id, idx, {
-                        targetDeviceId: e.target.value === "" ? null : e.target.value
-                      })
-                    }
-                  >
-                    <option value="">No target</option>
-                    {devices.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name || d.id}
-                      </option>
-                    ))}
-                  </select>
-                  <span style={styles.muted}>{deviceName}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 260 }}>
+                    <div style={{ ...styles.row, flexWrap: "wrap", gap: 8 }}>
+                      <label style={styles.toggleRow}>
+                        <input
+                          type="checkbox"
+                          checked={slot.broadcast ?? false}
+                          onChange={(e) => updateSlot(selectedControl!.id, idx, { broadcast: e.target.checked })}
+                        />
+                        <span style={styles.muted}>Broadcast</span>
+                      </label>
+                      <button
+                        style={styles.btnTiny}
+                        disabled={!devices.length || slot.broadcast}
+                        onClick={() => addTarget(idx)}
+                      >
+                        + Target
+                      </button>
+                      <span style={styles.muted}>{slotTargetLabel(slot, devices)}</span>
+                    </div>
+                    {!slot.broadcast
+                      ? targets.map((target, targetIdx) => (
+                          <div key={targetIdx} style={{ ...styles.row, flexWrap: "wrap", gap: 6 }}>
+                            <select
+                              style={styles.select}
+                              value={target.deviceId}
+                              onChange={(e) => updateTarget(idx, targetIdx, { deviceId: e.target.value })}
+                            >
+                              {devices.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name || d.id}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              style={styles.inputNarrow}
+                              type="number"
+                              min={1}
+                              max={16}
+                              placeholder="ch"
+                              value={target.channel ?? ""}
+                              onChange={(e) =>
+                                updateTarget(idx, targetIdx, {
+                                  channel: e.target.value === "" ? undefined : clampChannel(Number(e.target.value) || 0)
+                                })
+                              }
+                            />
+                            {isCc ? (
+                              <input
+                                style={styles.inputNarrow}
+                                type="number"
+                                min={0}
+                                max={127}
+                                placeholder="CC override"
+                                value={target.cc ?? ""}
+                                onChange={(e) =>
+                                  updateTarget(idx, targetIdx, {
+                                    cc: e.target.value === "" ? undefined : clampMidi(Number(e.target.value) || 0)
+                                  })
+                                }
+                              />
+                            ) : null}
+                            <button style={styles.btnTiny} onClick={() => removeTarget(idx, targetIdx)}>
+                              Remove
+                            </button>
+                          </div>
+                        ))
+                      : null}
+                  </div>
                 </div>
               );
             })}
@@ -3183,6 +3224,35 @@ function describeMsg(msg: MidiMsg): string {
     default:
       return "Unknown";
   }
+}
+
+function withTargetDefaults(slot: MappingSlot): MappingSlot {
+  const targets: MappingSlotTarget[] =
+    slot.targets && Array.isArray(slot.targets) && slot.targets.length
+      ? slot.targets
+      : slot.targetDeviceId
+        ? [{ deviceId: slot.targetDeviceId }]
+        : [];
+  const targetDeviceId = slot.targetDeviceId ?? targets[0]?.deviceId ?? null;
+  const broadcast = slot.broadcast ?? false;
+  return { ...(slot as any), targets, targetDeviceId, broadcast } as MappingSlot;
+}
+
+function slotTargets(slot: MappingSlot): MappingSlotTarget[] {
+  return withTargetDefaults(slot).targets ?? [];
+}
+
+function primaryTargetId(slot: MappingSlot): string | null {
+  return withTargetDefaults(slot).targetDeviceId ?? null;
+}
+
+function slotTargetLabel(slot: MappingSlot, devices: DeviceConfig[]): string {
+  const normalized = withTargetDefaults(slot);
+  if (normalized.broadcast) return "Broadcast (all devices)";
+  const ids = normalized.targets?.map((t) => t.deviceId) ?? [];
+  if (!ids.length) return "No target";
+  const names = ids.map((id) => devices.find((d) => d.id === id)?.name ?? id);
+  return names.join(", ");
 }
 
 function clampChannel(channel: number) {
