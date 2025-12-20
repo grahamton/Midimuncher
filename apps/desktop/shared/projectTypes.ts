@@ -86,6 +86,7 @@ export type SnapshotsState = {
   captureNotes: string;
   banks: SnapshotBankState[];
 };
+export type ChainStep = { snapshot: string; bars: number };
 
 export type ProjectStateV1 = {
   backendId: string | null;
@@ -96,6 +97,7 @@ export type ProjectStateV1 = {
   devices: DeviceConfig[];
   routes: RouteConfig[];
   controls: ControlElement[];
+  chainSteps: ChainStep[];
   selectedControlId: string | null;
   sequencer: SequencerProjectState;
   ui: {
@@ -166,6 +168,15 @@ export function defaultSnapshotsState(): SnapshotsState {
   };
 }
 
+function defaultChainSteps(): ChainStep[] {
+  return [
+    { snapshot: "INTRO", bars: 8 },
+    { snapshot: "VERSE", bars: 8 },
+    { snapshot: "CHORUS 1", bars: 8 },
+    { snapshot: "DROP!!", bars: 8 }
+  ];
+}
+
 const DEFAULT_SEQUENCER_STEP_COUNT = 16;
 
 function defaultSequencerTransport(): SequencerTransportState {
@@ -231,6 +242,7 @@ function defaultProjectStateV1(): ProjectStateV1 {
     selectedDeviceId: null,
     devices: [],
     routes: [],
+    chainSteps: defaultChainSteps(),
     controls: [],
     selectedControlId: null,
     sequencer: defaultSequencerState(),
@@ -377,6 +389,19 @@ function coerceSequencerChain(raw: unknown, index: number): SequencerChainConfig
   };
 }
 
+function coerceChainStep(raw: unknown, idx: number): ChainStep | null {
+  const rec = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const snapshot = typeof rec.snapshot === "string" ? rec.snapshot : null;
+  const barsNum = Math.round(asNumberOr(rec.bars, NaN));
+  // reject invalid entries so the caller can fall back to defaults
+  if (!snapshot) return null;
+  if (!Number.isFinite(barsNum) || barsNum < 1 || barsNum > 64) return null;
+  return {
+    snapshot,
+    bars: Math.max(1, barsNum)
+  };
+}
+
 function coerceSequencerState(rawState: unknown): SequencerProjectState {
   const defaults = defaultSequencerState();
   const raw = (rawState && typeof rawState === "object" ? (rawState as Record<string, unknown>) : {}) as Record<string, unknown>;
@@ -491,6 +516,12 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     clockEnabled: asBooleanOr(d.clockEnabled, false)
   }));
 
+  const chainSteps: ChainStep[] = asArray(raw.chainSteps)
+    .slice(0, 64)
+    .map((s, idx) => coerceChainStep(s, idx))
+    .filter((v): v is ChainStep => Boolean(v));
+  const safeChainSteps = chainSteps.length > 0 ? chainSteps : stateDefaults.chainSteps;
+
   return {
     backendId: asStringOrNull(raw.backendId),
     selectedIn: asStringOrNull(raw.selectedIn),
@@ -500,6 +531,7 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     devices,
     routes: asArray<RouteConfig>(raw.routes),
     controls: asArray<ControlElement>(raw.controls),
+    chainSteps: safeChainSteps,
     selectedControlId: asStringOrNull(raw.selectedControlId),
     sequencer,
     ui: {
