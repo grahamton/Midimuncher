@@ -12,6 +12,7 @@ import {
   Link as LinkIcon,
   Play,
   Plus,
+  Plug,
   RefreshCw,
   RotateCcw,
   RotateCw,
@@ -43,7 +44,9 @@ import type {
 } from "../../shared/projectTypes";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
+import { formatPortLabel, sortPortsWithOxiFirst } from "./lib/ports";
 import { quantizeToMs } from "./lib/tempo";
+import { DeviceStatusPanel, type DeviceStatus } from "./components/DeviceStatus";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
@@ -418,6 +421,7 @@ export function App() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceConfig[]>([]);
   const [log, setLog] = useState<MidiEvent[]>([]);
+  const [deviceActivity, setDeviceActivity] = useState<Record<string, number>>({});
   const [ccValue, setCcValue] = useState(64);
   const [note, setNote] = useState(60);
   const [loadingPorts, setLoadingPorts] = useState(false);
@@ -532,13 +536,7 @@ export function App() {
       setSelectedIn(validIn ?? available.inputs[0]?.id ?? null);
       setSelectedOut(validOut ?? available.outputs[0]?.id ?? null);
 
-      setDevices((current) =>
-        current.slice(0, MAX_DEVICES).map((d) => ({
-          ...d,
-          inputId: d.inputId && available.inputs.some((p) => p.id === d.inputId) ? d.inputId : null,
-          outputId: d.outputId && available.outputs.some((p) => p.id === d.outputId) ? d.outputId : null
-        }))
-      );
+      setDevices((current) => current.slice(0, MAX_DEVICES));
 
       setRoutes((current) =>
         current.filter(
@@ -553,6 +551,8 @@ export function App() {
     });
 
     const unsubscribe = midiApi.onEvent((evt) => {
+      markDeviceActivityByPort(evt.src.id);
+
       const target = learnTargetRef.current;
       if (target && evt.msg.t === "cc") {
         const currentSelectedIn = selectedInRef.current;
@@ -833,10 +833,42 @@ export function App() {
       })),
     [log]
   );
+  const deviceStatuses = useMemo<DeviceStatus[]>(
+    () =>
+      devices.map((device) => {
+        const inputPort = device.inputId ? ports.inputs.find((p) => p.id === device.inputId) ?? null : null;
+        const outputPort = device.outputId ? ports.outputs.find((p) => p.id === device.outputId) ?? null : null;
+        const online = (!device.inputId || Boolean(inputPort)) && (!device.outputId || Boolean(outputPort));
+        return {
+          device,
+          inputPort,
+          outputPort,
+          online,
+          lastActivity: deviceActivity[device.id] ?? null
+        };
+      }),
+    [devices, ports.inputs, ports.outputs, deviceActivity]
+  );
   const logCapReached = activity.length >= LOG_LIMIT;
   const clockStale = useMemo(
     () => useClockSync && (!lastClockTickRef.current || Date.now() - lastClockTickRef.current > 2000),
     [useClockSync, clockHeartbeat]
+  );
+  const offlineUsedDevices = useMemo(
+    () => {
+      const targeted = new Set<string>();
+      controls.forEach((control) => {
+        control.slots.forEach((slot) => {
+          if (!slot?.enabled || slot.kind === "empty") return;
+          if (slot.targetDeviceId) targeted.add(slot.targetDeviceId);
+        });
+      });
+      const sceneDevices = new Set(devices.filter((d) => d.outputId).map((d) => d.id));
+      return deviceStatuses.filter(
+        (status) => !status.online && (sceneDevices.has(status.device.id) || targeted.has(status.device.id))
+      );
+    },
+    [controls, devices, deviceStatuses]
   );
 
   function relinkClock() {
@@ -867,10 +899,10 @@ export function App() {
     const outs = ports.outputs;
     for (const out of outs) {
       for (let ch = 1; ch <= 16; ch++) {
-        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
-        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
+        await sendWithActivity({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
+        await sendWithActivity({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
       }
-      await midiApi.send({ portId: out.id, msg: { t: "stop" } });
+      await sendWithActivity({ portId: out.id, msg: { t: "stop" } });
     }
   }
 
@@ -966,6 +998,24 @@ export function App() {
     await refreshPorts();
   }
 
+  function markDeviceActivityByPort(portId: string | null) {
+    if (!portId) return;
+    const match = devicesRef.current.find((d) => d.inputId === portId || d.outputId === portId);
+    if (!match) return;
+    setDeviceActivity((current) => {
+      const now = Date.now();
+      if (current[match.id] === now) return current;
+      return { ...current, [match.id]: now };
+    });
+  }
+
+  async function sendWithActivity(payload: MidiSendPayload) {
+    if (!midiApi) return false;
+    const ok = await midiApi.send(payload);
+    markDeviceActivityByPort(payload.portId);
+    return ok;
+  }
+
   async function runDiagnostics() {
     if (!midiApi) return;
     if (!selectedOut) {
@@ -975,12 +1025,15 @@ export function App() {
     setDiagRunning(true);
     setDiagMessage("Sending test note...");
     try {
-      const ok = await midiApi.send({
+      const ok = await sendWithActivity({
         portId: selectedOut,
         msg: { t: "noteOn", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 100 }
       });
       setTimeout(() => {
-        midiApi.send({ portId: selectedOut, msg: { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 } });
+        void sendWithActivity({
+          portId: selectedOut,
+          msg: { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 }
+        });
       }, 150);
       setDiagMessage(ok ? "Test note sent. Check downstream device/monitor." : "Send failed.");
     } catch (err) {
@@ -994,12 +1047,12 @@ export function App() {
   async function sendTestNote() {
     if (!midiApi || !selectedOut) return;
     const channel = 1;
-    await midiApi.send({
+    await sendWithActivity({
       portId: selectedOut,
       msg: { t: "noteOn", ch: channel, note, vel: 110 }
     });
     setTimeout(() => {
-      midiApi.send({
+      void sendWithActivity({
         portId: selectedOut,
         msg: { t: "noteOff", ch: channel, note, vel: 0 }
       });
@@ -1008,7 +1061,7 @@ export function App() {
 
   async function sendCc() {
     if (!midiApi || !selectedOut) return;
-    await midiApi.send({
+    await sendWithActivity({
       portId: selectedOut,
       msg: { t: "cc", ch: 1, cc: 1, val: ccValue }
     });
@@ -1016,20 +1069,20 @@ export function App() {
 
   async function sendQuickNote(portId: string | null, channel: number, noteValue: number, velocity = 100) {
     if (!midiApi || !portId) return;
-    await midiApi.send({ portId, msg: { t: "noteOn", ch: channel, note: noteValue, vel: velocity } });
+    await sendWithActivity({ portId, msg: { t: "noteOn", ch: channel, note: noteValue, vel: velocity } });
     setTimeout(() => {
-      void midiApi.send({ portId, msg: { t: "noteOff", ch: channel, note: noteValue, vel: 0 } });
+      void sendWithActivity({ portId, msg: { t: "noteOff", ch: channel, note: noteValue, vel: 0 } });
     }, 180);
   }
 
   async function sendQuickCc(portId: string | null, channel: number, cc: number, val: number) {
     if (!midiApi || !portId) return;
-    await midiApi.send({ portId, msg: { t: "cc", ch: channel, cc, val } });
+    await sendWithActivity({ portId, msg: { t: "cc", ch: channel, cc, val } });
   }
 
   async function sendQuickProgram(portId: string | null, channel: number, program: number) {
     if (!midiApi || !portId) return;
-    await midiApi.send({ portId, msg: { t: "programChange", ch: channel, program } });
+    await sendWithActivity({ portId, msg: { t: "programChange", ch: channel, program } });
   }
 
   function addDevice() {
@@ -1055,6 +1108,11 @@ export function App() {
 
   function removeDevice(id: string) {
     setDevices((current) => current.filter((d) => d.id !== id));
+    setDeviceActivity((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
     if (selectedDeviceId === id) {
       setSelectedDeviceId(null);
     }
@@ -1217,11 +1275,12 @@ export function App() {
       value: clampMidi(rawValue),
       devices: devices.map((d) => ({ id: d.id, outputId: d.outputId, channel: d.channel }))
     });
+    devices.forEach((d) => markDeviceActivityByPort(d.outputId));
   }
 
   async function sendOxiTransport(cc: 105 | 106 | 107) {
     if (!midiApi || !selectedOut) return;
-    await midiApi.send({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
+    await sendWithActivity({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
   }
 
   function scheduleBurstSend(batch: MidiSendPayload[], sender: (payload: MidiSendPayload) => Promise<unknown>) {
@@ -1250,7 +1309,7 @@ export function App() {
         });
       });
     });
-    scheduleBurstSend(batches, (payload) => midiApi.send(payload));
+    scheduleBurstSend(batches, (payload) => sendWithActivity(payload));
   }
 
   function clearSnapshotTimer() {
@@ -1433,10 +1492,13 @@ export function App() {
             route={route}
             ports={ports}
             devices={devices}
+            deviceStatuses={deviceStatuses}
             selectedIn={selectedIn}
             selectedOut={selectedOut}
             onSelectIn={setSelectedIn}
             onSelectOut={setSelectedOut}
+            onUpdateDevice={updateDevice}
+            onAddDevice={addDevice}
             diagMessage={diagMessage}
             diagRunning={diagRunning}
             onRunDiagnostics={runDiagnostics}
@@ -1474,6 +1536,7 @@ export function App() {
             onChangeSnapshotMode={setSnapshotMode}
             snapshotFadeMs={snapshotFadeMs}
             onChangeSnapshotFade={(ms) => setSnapshotFadeMs(Math.max(0, ms))}
+            offlineDevices={offlineUsedDevices}
             chainSteps={chainSteps}
             chainPlaying={chainPlaying}
             chainIndex={chainIndex}
@@ -1826,10 +1889,13 @@ function MainContentArea(props: {
   route: NavRoute;
   ports: MidiPorts;
   devices: DeviceConfig[];
+  deviceStatuses: DeviceStatus[];
   selectedIn: string | null;
   selectedOut: string | null;
   onSelectIn: (id: string | null) => void;
   onSelectOut: (id: string | null) => void;
+  onUpdateDevice: (id: string, partial: Partial<DeviceConfig>) => void;
+  onAddDevice: () => void;
   diagMessage: string | null;
   diagRunning: boolean;
   onRunDiagnostics: () => void;
@@ -1852,6 +1918,7 @@ function MainContentArea(props: {
   onChangeSnapshotMode: (m: SnapshotMode) => void;
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
+  offlineDevices: DeviceStatus[];
   chainSteps: ChainStep[];
   chainPlaying: boolean;
   chainIndex: number;
@@ -1893,10 +1960,13 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
         <SetupPage
           ports={rest.ports}
           devices={rest.devices}
+          deviceStatuses={rest.deviceStatuses}
           selectedIn={rest.selectedIn}
           selectedOut={rest.selectedOut}
           onSelectIn={rest.onSelectIn}
           onSelectOut={rest.onSelectOut}
+          onUpdateDevice={rest.onUpdateDevice}
+          onAddDevice={rest.onAddDevice}
           diagMessage={rest.diagMessage}
           diagRunning={rest.diagRunning}
           onRunDiagnostics={rest.onRunDiagnostics}
@@ -1942,6 +2012,7 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
+          offlineDevices={rest.offlineDevices}
         />
       );
     case "chains":
@@ -1991,6 +2062,7 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
+          offlineDevices={rest.offlineDevices}
         />
       );
   }
@@ -2024,10 +2096,13 @@ function Panel({ title, right, children }: { title: string; right?: ReactNode; c
 function SetupPage({
   ports,
   devices,
+  deviceStatuses,
   selectedIn,
   selectedOut,
   onSelectIn,
   onSelectOut,
+  onUpdateDevice,
+  onAddDevice,
   diagMessage,
   diagRunning,
   onRunDiagnostics,
@@ -2041,10 +2116,13 @@ function SetupPage({
 }: {
   ports: MidiPorts;
   devices: DeviceConfig[];
+  deviceStatuses: DeviceStatus[];
   selectedIn: string | null;
   selectedOut: string | null;
   onSelectIn: (id: string | null) => void;
   onSelectOut: (id: string | null) => void;
+  onUpdateDevice: (id: string, partial: Partial<DeviceConfig>) => void;
+  onAddDevice: () => void;
   diagMessage: string | null;
   diagRunning: boolean;
   onRunDiagnostics: () => void;
@@ -2086,22 +2164,12 @@ function SetupPage({
       />
       <div style={styles.pageGrid2}>
         <Panel title="Connected MIDI Devices">
-          <div style={styles.table}>
-            {devices.map((dev, idx) => (
-              <div key={dev.id} style={styles.tableRow}>
-                <span style={styles.cellSmall}>OUT {idx + 1}</span>
-                <select style={styles.selectWide} value={dev.outputId ?? ""} onChange={(e) => onSelectOut(e.target.value)}>
-                  <option value="">Select output</option>
-                  {ports.outputs.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {formatPortLabel(p.name)}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ ...styles.dot, backgroundColor: selectedOut === dev.outputId ? "#35c96a" : "#444" }} />
-              </div>
-            ))}
-          </div>
+          <DeviceStatusPanel
+            statuses={deviceStatuses}
+            ports={ports}
+            onChangeDevice={onUpdateDevice}
+            onAddDevice={onAddDevice}
+          />
         </Panel>
         <Panel title="Configuration">
           <div style={styles.card}>
@@ -2712,7 +2780,8 @@ function SnapshotsPage({
   onChangeSnapshotQuantize,
   onChangeSnapshotMode,
   snapshotFadeMs,
-  onChangeSnapshotFade
+  onChangeSnapshotFade,
+  offlineDevices
 }: {
   snapshots: string[];
   activeSnapshot: string | null;
@@ -2724,11 +2793,75 @@ function SnapshotsPage({
   onChangeSnapshotMode: (m: SnapshotMode) => void;
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
+  offlineDevices: DeviceStatus[];
 }) {
   const colors = ["#38bdf8", "#f472b6", "#22d3ee", "#f97316", "#a3e635", "#c084fc", "#facc15", "#fb7185"];
+  const formatActivity = (ts: number | null) => {
+    if (!ts) return "no activity yet";
+    const delta = Date.now() - ts;
+    if (delta < 5_000) return "just now";
+    if (delta < 60_000) return `${Math.round(delta / 1000)}s ago`;
+    const mins = Math.round(delta / 60000);
+    if (mins < 90) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    return `${hours}h ago`;
+  };
 
   return (
     <Page>
+      {offlineDevices.length ? (
+        <div
+          style={{
+            border: "1px solid #4b5563",
+            background: "#1f2937",
+            borderRadius: 10,
+            padding: 12,
+            marginBottom: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fbbf24" }}>
+            <AlertCircle size={16} />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <strong>Device offline</strong>
+              <span style={{ color: "#e5e7eb", fontWeight: 400 }}>
+                Scenes and macros targeting these devices will be skipped until ports are rebound.
+              </span>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {offlineDevices.map((status) => {
+              const missing: string[] = [];
+              if (status.device.inputId && !status.inputPort) missing.push("input");
+              if (status.device.outputId && !status.outputPort) missing.push("output");
+              const missingLabel = missing.length ? `Missing ${missing.join(" & ")}` : "Port unreachable";
+              return (
+                <span
+                  key={status.device.id}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #9a3412",
+                    background: "#451a03",
+                    color: "#fbbf24",
+                    fontSize: 12,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <Plug size={12} />
+                  <span>
+                    {status.device.name} · {missingLabel} · last {formatActivity(status.lastActivity)}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       <PageHeader
         title="Snapshots & Transitions"
         right={
@@ -3075,35 +3208,6 @@ function BottomUtilityBar({
     </div>
   );
 }
-type OxiAnalysis = { isOxi: boolean; oxiTag: "A" | "B" | "C" | "?" | null; rank: number };
-
-function analyzeOxiPortName(name: string): OxiAnalysis {
-  const n = (name ?? "").toLowerCase();
-  const isOxi = n.includes("oxi");
-  if (!isOxi) return { isOxi: false, oxiTag: null, rank: 1000 };
-
-  const match = n.match(/(?:midi|usb)\s*([123])\b/) ?? n.match(/\b([123])\b/);
-  const num = match?.[1];
-  const oxiTag = num === "1" ? "A" : num === "2" ? "B" : num === "3" ? "C" : "?";
-  const rank = oxiTag === "A" ? 0 : oxiTag === "B" ? 1 : oxiTag === "C" ? 2 : 3;
-  return { isOxi: true, oxiTag, rank };
-}
-
-function formatPortLabel(name: string): string {
-  const a = analyzeOxiPortName(name);
-  if (!a.isOxi) return name;
-  const prefix = a.oxiTag && a.oxiTag !== "?" ? `OXI ${a.oxiTag}` : "OXI";
-  return `${prefix} - ${name}`;
-}
-
-function sortPortsWithOxiFirst(a: MidiPortInfo, b: MidiPortInfo): number {
-  const aa = analyzeOxiPortName(a.name);
-  const bb = analyzeOxiPortName(b.name);
-  if (aa.isOxi !== bb.isOxi) return aa.isOxi ? -1 : 1;
-  if (aa.isOxi && bb.isOxi && aa.rank !== bb.rank) return aa.rank - bb.rank;
-  return a.name.localeCompare(b.name);
-}
-
 function describeMsg(msg: MidiMsg): string {
   switch (msg.t) {
     case "noteOn":
