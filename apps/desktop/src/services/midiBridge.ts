@@ -54,7 +54,11 @@ export function useMidiBridgeClock(midiApi: MidiApi | undefined, ppqn: number = 
       }
 
       if (evt.msg.t === "start") {
-        setClock((current) => ({ ...current, running: true }));
+        setClock((current) => ({
+          ...initialClock(current.ppqn),
+          running: true,
+          heartbeat: (current.heartbeat + 1) % 1000
+        }));
       }
       if (evt.msg.t === "stop") {
         setClock((current) => ({ ...current, running: false }));
