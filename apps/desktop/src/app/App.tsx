@@ -12,7 +12,6 @@ import {
   Link as LinkIcon,
   Play,
   Plus,
-  Plug,
   RefreshCw,
   RotateCcw,
   RotateCw,
@@ -23,8 +22,8 @@ import {
   Trash2,
   Zap
 } from "lucide-react";
-import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES, resolveSlotTargets } from "@midi-playground/core";
-import type { ControlElement, Curve, MappingSlot, MappingSlotTarget, MidiEvent, MidiMsg } from "@midi-playground/core";
+import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
   MidiPortInfo,
@@ -42,18 +41,16 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
+import { useMidiBridgeClock, type BridgeClock } from "../services/midiBridge";
+import { StagePage } from "./StagePage";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
-import { formatPortLabel, sortPortsWithOxiFirst } from "./lib/ports";
 import { quantizeToMs } from "./lib/tempo";
-import { DeviceStatusPanel, type DeviceStatus } from "./components/DeviceStatus";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
 const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
-const CLOCK_PPQN = 24;
-
 const styles = {
   window: {
     height: "100vh",
@@ -420,8 +417,9 @@ export function App() {
   const [selectedOut, setSelectedOut] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceConfig[]>([]);
+  const { clock, relinkClock } = useMidiBridgeClock(midiApi);
+  const clockBpm = clock.bpm;
   const [log, setLog] = useState<MidiEvent[]>([]);
-  const [deviceActivity, setDeviceActivity] = useState<Record<string, number>>({});
   const [ccValue, setCcValue] = useState(64);
   const [note, setNote] = useState(60);
   const [loadingPorts, setLoadingPorts] = useState(false);
@@ -446,21 +444,17 @@ export function App() {
   const snapshotTimerRef = useRef<number | null>(null);
   const [tempoBpm, setTempoBpm] = useState(defaults.tempoBpm);
   const [useClockSync, setUseClockSync] = useState(defaults.useClockSync);
-  const [clockBpm, setClockBpm] = useState<number | null>(null);
   const [followClockStart, setFollowClockStart] = useState(defaults.followClockStart);
   const [chainSteps, setChainSteps] = useState<ChainStep[]>(defaults.chainSteps);
   const [chainPlaying, setChainPlaying] = useState(false);
   const chainTimerRef = useRef<number | null>(null);
   const [chainIndex, setChainIndex] = useState<number>(0);
-  const lastClockTickRef = useRef<number | null>(null);
-  const clockBpmRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSentStateJsonRef = useRef<string | null>(null);
-  const [clockHeartbeat, setClockHeartbeat] = useState(0);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
   const selectedDeviceIdRef = useRef<string | null>(null);
@@ -536,7 +530,13 @@ export function App() {
       setSelectedIn(validIn ?? available.inputs[0]?.id ?? null);
       setSelectedOut(validOut ?? available.outputs[0]?.id ?? null);
 
-      setDevices((current) => current.slice(0, MAX_DEVICES));
+      setDevices((current) =>
+        current.slice(0, MAX_DEVICES).map((d) => ({
+          ...d,
+          inputId: d.inputId && available.inputs.some((p) => p.id === d.inputId) ? d.inputId : null,
+          outputId: d.outputId && available.outputs.some((p) => p.id === d.outputId) ? d.outputId : null
+        }))
+      );
 
       setRoutes((current) =>
         current.filter(
@@ -551,8 +551,6 @@ export function App() {
     });
 
     const unsubscribe = midiApi.onEvent((evt) => {
-      markDeviceActivityByPort(evt.src.id);
-
       const target = learnTargetRef.current;
       if (target && evt.msg.t === "cc") {
         const currentSelectedIn = selectedInRef.current;
@@ -582,8 +580,6 @@ export function App() {
                   min: 0,
                   max: 127,
                   curve: "linear",
-                  targets: fallbackTarget ? [{ deviceId: fallbackTarget }] : [],
-                  broadcast: false,
                   targetDeviceId: fallbackTarget
                 };
               } else {
@@ -592,13 +588,6 @@ export function App() {
                   enabled: true,
                   cc: clampMidi(evt.msg.cc),
                   channel: clampChannel(evt.msg.ch),
-                  targets:
-                    existing.targets?.length
-                      ? existing.targets
-                      : fallbackTarget
-                        ? [{ deviceId: fallbackTarget }]
-                        : [],
-                  broadcast: existing.broadcast ?? false,
                   targetDeviceId: existing.targetDeviceId ?? fallbackTarget
                 };
               }
@@ -609,22 +598,6 @@ export function App() {
       }
 
       setLog((current) => [evt, ...current].slice(0, LOG_LIMIT));
-
-      if (evt.msg.t === "clock") {
-        const now = evt.ts ?? Date.now();
-        setClockHeartbeat((v) => (v + 1) % 1000);
-        const last = lastClockTickRef.current;
-        if (last) {
-          const dtMs = now - last;
-          if (dtMs > 0) {
-            const bpm = 60000 / (dtMs * CLOCK_PPQN);
-            const smoothed = clockBpmRef.current ? clockBpmRef.current * 0.7 + bpm * 0.3 : bpm;
-            clockBpmRef.current = smoothed;
-            setClockBpm(smoothed);
-          }
-        }
-        lastClockTickRef.current = now;
-      }
 
       if (evt.msg.t === "start" && followClockStart) {
         startChain();
@@ -842,50 +815,8 @@ export function App() {
       })),
     [log]
   );
-  const deviceStatuses = useMemo<DeviceStatus[]>(
-    () =>
-      devices.map((device) => {
-        const inputPort = device.inputId ? ports.inputs.find((p) => p.id === device.inputId) ?? null : null;
-        const outputPort = device.outputId ? ports.outputs.find((p) => p.id === device.outputId) ?? null : null;
-        const online = (!device.inputId || Boolean(inputPort)) && (!device.outputId || Boolean(outputPort));
-        return {
-          device,
-          inputPort,
-          outputPort,
-          online,
-          lastActivity: deviceActivity[device.id] ?? null
-        };
-      }),
-    [devices, ports.inputs, ports.outputs, deviceActivity]
-  );
   const logCapReached = activity.length >= LOG_LIMIT;
-  const clockStale = useMemo(
-    () => useClockSync && (!lastClockTickRef.current || Date.now() - lastClockTickRef.current > 2000),
-    [useClockSync, clockHeartbeat]
-  );
-  const offlineUsedDevices = useMemo(
-    () => {
-      const targeted = new Set<string>();
-      controls.forEach((control) => {
-        control.slots.forEach((slot) => {
-          if (!slot?.enabled || slot.kind === "empty") return;
-          if (slot.targetDeviceId) targeted.add(slot.targetDeviceId);
-        });
-      });
-      const sceneDevices = new Set(devices.filter((d) => d.outputId).map((d) => d.id));
-      return deviceStatuses.filter(
-        (status) => !status.online && (sceneDevices.has(status.device.id) || targeted.has(status.device.id))
-      );
-    },
-    [controls, devices, deviceStatuses]
-  );
-
-  function relinkClock() {
-    lastClockTickRef.current = null;
-    clockBpmRef.current = null;
-    setClockBpm(null);
-    setClockHeartbeat((v) => (v + 1) % 1000);
-  }
+  const clockStale = useMemo(() => useClockSync && clock.stale, [clock.stale, useClockSync]);
 
   async function refreshPorts() {
     if (!midiApi) return;
@@ -908,10 +839,10 @@ export function App() {
     const outs = ports.outputs;
     for (const out of outs) {
       for (let ch = 1; ch <= 16; ch++) {
-        await sendWithActivity({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
-        await sendWithActivity({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
+        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
+        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
       }
-      await sendWithActivity({ portId: out.id, msg: { t: "stop" } });
+      await midiApi.send({ portId: out.id, msg: { t: "stop" } });
     }
   }
 
@@ -1007,24 +938,6 @@ export function App() {
     await refreshPorts();
   }
 
-  function markDeviceActivityByPort(portId: string | null) {
-    if (!portId) return;
-    const match = devicesRef.current.find((d) => d.inputId === portId || d.outputId === portId);
-    if (!match) return;
-    setDeviceActivity((current) => {
-      const now = Date.now();
-      if (current[match.id] === now) return current;
-      return { ...current, [match.id]: now };
-    });
-  }
-
-  async function sendWithActivity(payload: MidiSendPayload) {
-    if (!midiApi) return false;
-    const ok = await midiApi.send(payload);
-    markDeviceActivityByPort(payload.portId);
-    return ok;
-  }
-
   async function runDiagnostics() {
     if (!midiApi) return;
     if (!selectedOut) {
@@ -1034,15 +947,12 @@ export function App() {
     setDiagRunning(true);
     setDiagMessage("Sending test note...");
     try {
-      const ok = await sendWithActivity({
+      const ok = await midiApi.send({
         portId: selectedOut,
         msg: { t: "noteOn", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 100 }
       });
       setTimeout(() => {
-        void sendWithActivity({
-          portId: selectedOut,
-          msg: { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 }
-        });
+        midiApi.send({ portId: selectedOut, msg: { t: "noteOff", ch: DIAG_CHANNEL, note: DIAG_NOTE, vel: 0 } });
       }, 150);
       setDiagMessage(ok ? "Test note sent. Check downstream device/monitor." : "Send failed.");
     } catch (err) {
@@ -1056,12 +966,12 @@ export function App() {
   async function sendTestNote() {
     if (!midiApi || !selectedOut) return;
     const channel = 1;
-    await sendWithActivity({
+    await midiApi.send({
       portId: selectedOut,
       msg: { t: "noteOn", ch: channel, note, vel: 110 }
     });
     setTimeout(() => {
-      void sendWithActivity({
+      midiApi.send({
         portId: selectedOut,
         msg: { t: "noteOff", ch: channel, note, vel: 0 }
       });
@@ -1070,7 +980,7 @@ export function App() {
 
   async function sendCc() {
     if (!midiApi || !selectedOut) return;
-    await sendWithActivity({
+    await midiApi.send({
       portId: selectedOut,
       msg: { t: "cc", ch: 1, cc: 1, val: ccValue }
     });
@@ -1078,20 +988,20 @@ export function App() {
 
   async function sendQuickNote(portId: string | null, channel: number, noteValue: number, velocity = 100) {
     if (!midiApi || !portId) return;
-    await sendWithActivity({ portId, msg: { t: "noteOn", ch: channel, note: noteValue, vel: velocity } });
+    await midiApi.send({ portId, msg: { t: "noteOn", ch: channel, note: noteValue, vel: velocity } });
     setTimeout(() => {
-      void sendWithActivity({ portId, msg: { t: "noteOff", ch: channel, note: noteValue, vel: 0 } });
+      void midiApi.send({ portId, msg: { t: "noteOff", ch: channel, note: noteValue, vel: 0 } });
     }, 180);
   }
 
   async function sendQuickCc(portId: string | null, channel: number, cc: number, val: number) {
     if (!midiApi || !portId) return;
-    await sendWithActivity({ portId, msg: { t: "cc", ch: channel, cc, val } });
+    await midiApi.send({ portId, msg: { t: "cc", ch: channel, cc, val } });
   }
 
   async function sendQuickProgram(portId: string | null, channel: number, program: number) {
     if (!midiApi || !portId) return;
-    await sendWithActivity({ portId, msg: { t: "programChange", ch: channel, program } });
+    await midiApi.send({ portId, msg: { t: "programChange", ch: channel, program } });
   }
 
   function addDevice() {
@@ -1117,11 +1027,6 @@ export function App() {
 
   function removeDevice(id: string) {
     setDevices((current) => current.filter((d) => d.id !== id));
-    setDeviceActivity((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
     if (selectedDeviceId === id) {
       setSelectedDeviceId(null);
     }
@@ -1271,7 +1176,7 @@ export function App() {
         const slots = [...c.slots];
         const existing = slots[slotIndex];
         if (!existing) return c;
-        slots[slotIndex] = withTargetDefaults({ ...(existing as any), ...(partial as any) } as MappingSlot);
+        slots[slotIndex] = { ...(existing as any), ...(partial as any) } as MappingSlot;
         return { ...c, slots };
       })
     );
@@ -1284,12 +1189,11 @@ export function App() {
       value: clampMidi(rawValue),
       devices: devices.map((d) => ({ id: d.id, outputId: d.outputId, channel: d.channel }))
     });
-    devices.forEach((d) => markDeviceActivityByPort(d.outputId));
   }
 
   async function sendOxiTransport(cc: 105 | 106 | 107) {
     if (!midiApi || !selectedOut) return;
-    await sendWithActivity({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
+    await midiApi.send({ portId: selectedOut, msg: { t: "cc", ch: 1, cc, val: 127 } });
   }
 
   function scheduleBurstSend(batch: MidiSendPayload[], sender: (payload: MidiSendPayload) => Promise<unknown>) {
@@ -1304,24 +1208,21 @@ export function App() {
   async function sendSnapshotNow() {
     if (!midiApi) return;
     const batches: { portId: string; msg: MidiMsg }[] = [];
-    controls.forEach((control) => {
-      control.slots.forEach((slot) => {
-        if (!slot?.enabled || slot.kind !== "cc") return;
-        const normalized = withTargetDefaults(slot);
-        const slotTargets = resolveSlotTargets(normalized, devices);
-        slotTargets.forEach(({ device: targetDevice, target }) => {
-          if (!targetDevice.outputId) return;
-          const channel = clampChannel(target?.channel ?? normalized.channel ?? targetDevice.channel);
-          const cc = clampMidi(target?.cc ?? normalized.cc ?? 0);
-          const value = clampMidi(normalized.max ?? 127);
+    devices.forEach((device) => {
+      if (!device.outputId) return;
+      controls.forEach((control) => {
+        control.slots.forEach((slot) => {
+          if (!slot?.enabled || slot.kind !== "cc") return;
+          const targetId = slot.targetDeviceId ?? device.id;
+          if (targetId !== device.id) return;
           batches.push({
-            portId: targetDevice.outputId,
-            msg: { t: "cc", ch: channel, cc, val: value }
+            portId: device.outputId!,
+            msg: { t: "cc", ch: clampChannel(slot.channel ?? device.channel), cc: slot.cc ?? 0, val: slot.max ?? 127 }
           });
         });
       });
     });
-    scheduleBurstSend(batches, (payload) => sendWithActivity(payload));
+    scheduleBurstSend(batches, (payload) => midiApi.send(payload));
   }
 
   function clearSnapshotTimer() {
@@ -1503,14 +1404,12 @@ export function App() {
           <MainContentArea
             route={route}
             ports={ports}
+            clock={clock}
             devices={devices}
-            deviceStatuses={deviceStatuses}
             selectedIn={selectedIn}
             selectedOut={selectedOut}
             onSelectIn={setSelectedIn}
             onSelectOut={setSelectedOut}
-            onUpdateDevice={updateDevice}
-            onAddDevice={addDevice}
             diagMessage={diagMessage}
             diagRunning={diagRunning}
             onRunDiagnostics={runDiagnostics}
@@ -1533,14 +1432,14 @@ export function App() {
             onSendCc={sendCc}
             onQuickTest={(portId, ch) => sendQuickNote(portId, ch, note)}
             onQuickCc={(portId, ch, ccNum, val) => sendQuickCc(portId, ch, ccNum, val)}
-          onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
-          onSendSnapshot={sendSnapshotNow}
-          onAddDeviceRoutes={addDeviceRoutes}
-          updateControl={updateControl}
-          onEmitControl={emitControl}
-          snapshots={snapshots}
-          activeSnapshot={activeSnapshot}
-          onSelectSnapshot={triggerSnapshot}
+            onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
+            onSendSnapshot={sendSnapshotNow}
+            onAddDeviceRoutes={addDeviceRoutes}
+            updateControl={updateControl}
+            onEmitControl={emitControl}
+            snapshots={snapshots}
+            activeSnapshot={activeSnapshot}
+            onSelectSnapshot={triggerSnapshot}
             pendingSnapshot={pendingSnapshot}
             snapshotQuantize={snapshotQuantize}
             snapshotMode={snapshotMode}
@@ -1548,7 +1447,6 @@ export function App() {
             onChangeSnapshotMode={setSnapshotMode}
             snapshotFadeMs={snapshotFadeMs}
             onChangeSnapshotFade={(ms) => setSnapshotFadeMs(Math.max(0, ms))}
-            offlineDevices={offlineUsedDevices}
             chainSteps={chainSteps}
             chainPlaying={chainPlaying}
             chainIndex={chainIndex}
@@ -1852,6 +1750,7 @@ function LeftNavRail({
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
     { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
+    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "chains", label: "Chains", icon: <LinkIcon size={18} /> },
     { id: "monitor", label: "Monitor", icon: <Activity size={18} /> },
     { id: "settings", label: "Settings", icon: <Settings size={18} /> }
@@ -1900,14 +1799,12 @@ function LeftNavRail({
 function MainContentArea(props: {
   route: NavRoute;
   ports: MidiPorts;
+  clock: BridgeClock;
   devices: DeviceConfig[];
-  deviceStatuses: DeviceStatus[];
   selectedIn: string | null;
   selectedOut: string | null;
   onSelectIn: (id: string | null) => void;
   onSelectOut: (id: string | null) => void;
-  onUpdateDevice: (id: string, partial: Partial<DeviceConfig>) => void;
-  onAddDevice: () => void;
   diagMessage: string | null;
   diagRunning: boolean;
   onRunDiagnostics: () => void;
@@ -1930,7 +1827,6 @@ function MainContentArea(props: {
   onChangeSnapshotMode: (m: SnapshotMode) => void;
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
-  offlineDevices: DeviceStatus[];
   chainSteps: ChainStep[];
   chainPlaying: boolean;
   chainIndex: number;
@@ -1972,13 +1868,10 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
         <SetupPage
           ports={rest.ports}
           devices={rest.devices}
-          deviceStatuses={rest.deviceStatuses}
           selectedIn={rest.selectedIn}
           selectedOut={rest.selectedOut}
           onSelectIn={rest.onSelectIn}
           onSelectOut={rest.onSelectOut}
-          onUpdateDevice={rest.onUpdateDevice}
-          onAddDevice={rest.onAddDevice}
           diagMessage={rest.diagMessage}
           diagRunning={rest.diagRunning}
           onRunDiagnostics={rest.onRunDiagnostics}
@@ -2024,7 +1917,15 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
-          offlineDevices={rest.offlineDevices}
+        />
+      );
+    case "stage":
+      return (
+        <StagePage
+          clock={rest.clock}
+          snapshots={rest.snapshots}
+          activeSnapshot={rest.activeSnapshot}
+          onSelectSnapshot={rest.onSelectSnapshot}
         />
       );
     case "chains":
@@ -2074,7 +1975,6 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
-          offlineDevices={rest.offlineDevices}
         />
       );
   }
@@ -2108,13 +2008,10 @@ function Panel({ title, right, children }: { title: string; right?: ReactNode; c
 function SetupPage({
   ports,
   devices,
-  deviceStatuses,
   selectedIn,
   selectedOut,
   onSelectIn,
   onSelectOut,
-  onUpdateDevice,
-  onAddDevice,
   diagMessage,
   diagRunning,
   onRunDiagnostics,
@@ -2128,13 +2025,10 @@ function SetupPage({
 }: {
   ports: MidiPorts;
   devices: DeviceConfig[];
-  deviceStatuses: DeviceStatus[];
   selectedIn: string | null;
   selectedOut: string | null;
   onSelectIn: (id: string | null) => void;
   onSelectOut: (id: string | null) => void;
-  onUpdateDevice: (id: string, partial: Partial<DeviceConfig>) => void;
-  onAddDevice: () => void;
   diagMessage: string | null;
   diagRunning: boolean;
   onRunDiagnostics: () => void;
@@ -2176,12 +2070,22 @@ function SetupPage({
       />
       <div style={styles.pageGrid2}>
         <Panel title="Connected MIDI Devices">
-          <DeviceStatusPanel
-            statuses={deviceStatuses}
-            ports={ports}
-            onChangeDevice={onUpdateDevice}
-            onAddDevice={onAddDevice}
-          />
+          <div style={styles.table}>
+            {devices.map((dev, idx) => (
+              <div key={dev.id} style={styles.tableRow}>
+                <span style={styles.cellSmall}>OUT {idx + 1}</span>
+                <select style={styles.selectWide} value={dev.outputId ?? ""} onChange={(e) => onSelectOut(e.target.value)}>
+                  <option value="">Select output</option>
+                  {ports.outputs.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {formatPortLabel(p.name)}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ ...styles.dot, backgroundColor: selectedOut === dev.outputId ? "#35c96a" : "#444" }} />
+              </div>
+            ))}
+          </div>
         </Panel>
         <Panel title="Configuration">
           <div style={styles.card}>
@@ -2398,8 +2302,6 @@ function SetupPage({
                       min: wizardMin,
                       max: wizardMax,
                       curve: wizardCurve,
-                      targets: wizardDeviceId ? [{ deviceId: wizardDeviceId }] : [],
-                      broadcast: false,
                       targetDeviceId: wizardDeviceId
                     });
                   });
@@ -2462,9 +2364,7 @@ function MappingPage({
   ccValue: number;
   devices: DeviceConfig[];
 }) {
-  const firstSlot = selectedControl?.slots[0];
-  const firstSlotTargetId = firstSlot ? primaryTargetId(firstSlot) : null;
-  const targetDevice = devices.find((d) => d.id === firstSlotTargetId) ?? devices[0];
+  const targetDevice = devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ?? devices[0];
   const targetProfile = targetDevice ? getInstrumentProfile(targetDevice.instrumentId) : null;
   const [showWizard, setShowWizard] = useState(false);
   const [wizardSelected, setWizardSelected] = useState<number[]>([]);
@@ -2486,8 +2386,6 @@ function MappingPage({
       kind: "cc",
       cc: clampMidi(ccNumber),
       enabled: true,
-      targets: targetDevice ? [{ deviceId: targetDevice.id }] : [],
-      broadcast: false,
       targetDeviceId: targetDevice?.id ?? null,
       channel: clampChannel(targetDevice?.channel ?? 1)
     });
@@ -2503,8 +2401,6 @@ function MappingPage({
         min: t.min,
         max: t.max,
         curve: t.curve,
-        targets: targetDevice ? [{ deviceId: targetDevice.id }] : [],
-        broadcast: false,
         targetDeviceId: targetDevice?.id ?? null,
         channel: clampChannel(targetDevice?.channel ?? 1)
       });
@@ -2512,32 +2408,6 @@ function MappingPage({
     if (updateControl) {
       updateControl(selectedControl.id, { label: `${selectedControl.label} (macro x${macroTargets.length})` });
     }
-  }
-
-  function addTarget(slotIndex: number) {
-    if (!selectedControl) return;
-    const deviceId = devices[0]?.id;
-    if (!deviceId) return;
-    const currentSlot = selectedControl.slots[slotIndex];
-    if (!currentSlot) return;
-    const nextTargets = [...slotTargets(currentSlot), { deviceId }];
-    updateSlot(selectedControl.id, slotIndex, { targets: nextTargets, targetDeviceId: nextTargets[0]?.deviceId ?? null });
-  }
-
-  function updateTarget(slotIndex: number, targetIndex: number, partial: Partial<MappingSlotTarget>) {
-    if (!selectedControl) return;
-    const currentSlot = selectedControl.slots[slotIndex];
-    if (!currentSlot) return;
-    const nextTargets = slotTargets(currentSlot).map((t, idx) => (idx === targetIndex ? { ...t, ...partial } : t));
-    updateSlot(selectedControl.id, slotIndex, { targets: nextTargets, targetDeviceId: nextTargets[0]?.deviceId ?? null });
-  }
-
-  function removeTarget(slotIndex: number, targetIndex: number) {
-    if (!selectedControl) return;
-    const currentSlot = selectedControl.slots[slotIndex];
-    if (!currentSlot) return;
-    const nextTargets = slotTargets(currentSlot).filter((_, idx) => idx !== targetIndex);
-    updateSlot(selectedControl.id, slotIndex, { targets: nextTargets, targetDeviceId: nextTargets[0]?.deviceId ?? null });
   }
 
   function nudgeControl(next: number) {
@@ -2628,10 +2498,12 @@ function MappingPage({
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(selectedControl ? selectedControl.slots : []).map((slot, idx) => {
+              const deviceName =
+                devices.find((d) => d.id === slot.targetDeviceId)?.name ??
+                (slot.targetDeviceId ? `Device ${slot.targetDeviceId}` : "No target");
               const isCc = slot.kind === "cc";
               const isPc = slot.kind === "pc";
               const isNote = slot.kind === "note";
-              const targets = slotTargets(slot);
               return (
                 <div key={idx} style={styles.tableRow}>
                   <span style={styles.cellSmall}>S{idx + 1}</span>
@@ -2742,74 +2614,23 @@ function MappingPage({
                       />
                     </>
                   ) : null}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 260 }}>
-                    <div style={{ ...styles.row, flexWrap: "wrap", gap: 8 }}>
-                      <label style={styles.toggleRow}>
-                        <input
-                          type="checkbox"
-                          checked={slot.broadcast ?? false}
-                          onChange={(e) => updateSlot(selectedControl!.id, idx, { broadcast: e.target.checked })}
-                        />
-                        <span style={styles.muted}>Broadcast</span>
-                      </label>
-                      <button
-                        style={styles.btnTiny}
-                        disabled={!devices.length || slot.broadcast}
-                        onClick={() => addTarget(idx)}
-                      >
-                        + Target
-                      </button>
-                      <span style={styles.muted}>{slotTargetLabel(slot, devices)}</span>
-                    </div>
-                    {!slot.broadcast
-                      ? targets.map((target, targetIdx) => (
-                          <div key={targetIdx} style={{ ...styles.row, flexWrap: "wrap", gap: 6 }}>
-                            <select
-                              style={styles.select}
-                              value={target.deviceId}
-                              onChange={(e) => updateTarget(idx, targetIdx, { deviceId: e.target.value })}
-                            >
-                              {devices.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                  {d.name || d.id}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              style={styles.inputNarrow}
-                              type="number"
-                              min={1}
-                              max={16}
-                              placeholder="ch"
-                              value={target.channel ?? ""}
-                              onChange={(e) =>
-                                updateTarget(idx, targetIdx, {
-                                  channel: e.target.value === "" ? undefined : clampChannel(Number(e.target.value) || 0)
-                                })
-                              }
-                            />
-                            {isCc ? (
-                              <input
-                                style={styles.inputNarrow}
-                                type="number"
-                                min={0}
-                                max={127}
-                                placeholder="CC override"
-                                value={target.cc ?? ""}
-                                onChange={(e) =>
-                                  updateTarget(idx, targetIdx, {
-                                    cc: e.target.value === "" ? undefined : clampMidi(Number(e.target.value) || 0)
-                                  })
-                                }
-                              />
-                            ) : null}
-                            <button style={styles.btnTiny} onClick={() => removeTarget(idx, targetIdx)}>
-                              Remove
-                            </button>
-                          </div>
-                        ))
-                      : null}
-                  </div>
+                  <select
+                    style={styles.select}
+                    value={slot.targetDeviceId ?? ""}
+                    onChange={(e) =>
+                      updateSlot(selectedControl!.id, idx, {
+                        targetDeviceId: e.target.value === "" ? null : e.target.value
+                      })
+                    }
+                  >
+                    <option value="">No target</option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name || d.id}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={styles.muted}>{deviceName}</span>
                 </div>
               );
             })}
@@ -2875,8 +2696,7 @@ function SnapshotsPage({
   onChangeSnapshotQuantize,
   onChangeSnapshotMode,
   snapshotFadeMs,
-  onChangeSnapshotFade,
-  offlineDevices
+  onChangeSnapshotFade
 }: {
   snapshots: string[];
   activeSnapshot: string | null;
@@ -2888,75 +2708,11 @@ function SnapshotsPage({
   onChangeSnapshotMode: (m: SnapshotMode) => void;
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
-  offlineDevices: DeviceStatus[];
 }) {
   const colors = ["#38bdf8", "#f472b6", "#22d3ee", "#f97316", "#a3e635", "#c084fc", "#facc15", "#fb7185"];
-  const formatActivity = (ts: number | null) => {
-    if (!ts) return "no activity yet";
-    const delta = Date.now() - ts;
-    if (delta < 5_000) return "just now";
-    if (delta < 60_000) return `${Math.round(delta / 1000)}s ago`;
-    const mins = Math.round(delta / 60000);
-    if (mins < 90) return `${mins}m ago`;
-    const hours = Math.round(mins / 60);
-    return `${hours}h ago`;
-  };
 
   return (
     <Page>
-      {offlineDevices.length ? (
-        <div
-          style={{
-            border: "1px solid #4b5563",
-            background: "#1f2937",
-            borderRadius: 10,
-            padding: 12,
-            marginBottom: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fbbf24" }}>
-            <AlertCircle size={16} />
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <strong>Device offline</strong>
-              <span style={{ color: "#e5e7eb", fontWeight: 400 }}>
-                Scenes and macros targeting these devices will be skipped until ports are rebound.
-              </span>
-            </div>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {offlineDevices.map((status) => {
-              const missing: string[] = [];
-              if (status.device.inputId && !status.inputPort) missing.push("input");
-              if (status.device.outputId && !status.outputPort) missing.push("output");
-              const missingLabel = missing.length ? `Missing ${missing.join(" & ")}` : "Port unreachable";
-              return (
-                <span
-                  key={status.device.id}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: "1px solid #9a3412",
-                    background: "#451a03",
-                    color: "#fbbf24",
-                    fontSize: 12,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6
-                  }}
-                >
-                  <Plug size={12} />
-                  <span>
-                    {status.device.name} · {missingLabel} · last {formatActivity(status.lastActivity)}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
       <PageHeader
         title="Snapshots & Transitions"
         right={
@@ -3303,6 +3059,35 @@ function BottomUtilityBar({
     </div>
   );
 }
+type OxiAnalysis = { isOxi: boolean; oxiTag: "A" | "B" | "C" | "?" | null; rank: number };
+
+function analyzeOxiPortName(name: string): OxiAnalysis {
+  const n = (name ?? "").toLowerCase();
+  const isOxi = n.includes("oxi");
+  if (!isOxi) return { isOxi: false, oxiTag: null, rank: 1000 };
+
+  const match = n.match(/(?:midi|usb)\s*([123])\b/) ?? n.match(/\b([123])\b/);
+  const num = match?.[1];
+  const oxiTag = num === "1" ? "A" : num === "2" ? "B" : num === "3" ? "C" : "?";
+  const rank = oxiTag === "A" ? 0 : oxiTag === "B" ? 1 : oxiTag === "C" ? 2 : 3;
+  return { isOxi: true, oxiTag, rank };
+}
+
+function formatPortLabel(name: string): string {
+  const a = analyzeOxiPortName(name);
+  if (!a.isOxi) return name;
+  const prefix = a.oxiTag && a.oxiTag !== "?" ? `OXI ${a.oxiTag}` : "OXI";
+  return `${prefix} - ${name}`;
+}
+
+function sortPortsWithOxiFirst(a: MidiPortInfo, b: MidiPortInfo): number {
+  const aa = analyzeOxiPortName(a.name);
+  const bb = analyzeOxiPortName(b.name);
+  if (aa.isOxi !== bb.isOxi) return aa.isOxi ? -1 : 1;
+  if (aa.isOxi && bb.isOxi && aa.rank !== bb.rank) return aa.rank - bb.rank;
+  return a.name.localeCompare(b.name);
+}
+
 function describeMsg(msg: MidiMsg): string {
   switch (msg.t) {
     case "noteOn":
@@ -3328,35 +3113,6 @@ function describeMsg(msg: MidiMsg): string {
     default:
       return "Unknown";
   }
-}
-
-function withTargetDefaults(slot: MappingSlot): MappingSlot {
-  const targets: MappingSlotTarget[] =
-    slot.targets && Array.isArray(slot.targets) && slot.targets.length
-      ? slot.targets
-      : slot.targetDeviceId
-        ? [{ deviceId: slot.targetDeviceId }]
-        : [];
-  const targetDeviceId = slot.targetDeviceId ?? targets[0]?.deviceId ?? null;
-  const broadcast = slot.broadcast ?? false;
-  return { ...(slot as any), targets, targetDeviceId, broadcast } as MappingSlot;
-}
-
-function slotTargets(slot: MappingSlot): MappingSlotTarget[] {
-  return withTargetDefaults(slot).targets ?? [];
-}
-
-function primaryTargetId(slot: MappingSlot): string | null {
-  return withTargetDefaults(slot).targetDeviceId ?? null;
-}
-
-function slotTargetLabel(slot: MappingSlot, devices: DeviceConfig[]): string {
-  const normalized = withTargetDefaults(slot);
-  if (normalized.broadcast) return "Broadcast (all devices)";
-  const ids = normalized.targets?.map((t) => t.deviceId) ?? [];
-  if (!ids.length) return "No target";
-  const names = ids.map((id) => devices.find((d) => d.id === id)?.name ?? id);
-  return names.join(", ");
 }
 
 function clampChannel(channel: number) {
