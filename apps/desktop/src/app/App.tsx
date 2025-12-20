@@ -22,7 +22,7 @@ import {
   Trash2,
   Zap
 } from "lucide-react";
-import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import { getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
@@ -41,6 +41,7 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
+import { buildRigControls, rigRouteLabels } from "./config/rig";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
 import { quantizeToMs } from "./lib/tempo";
@@ -400,29 +401,23 @@ const styles = {
 };
 
 function defaultControls(): ControlElement[] {
-  return [
-    { id: "knob-1", type: "knob", label: "Knob 1", value: 0, slots: defaultSlots() },
-    { id: "knob-2", type: "knob", label: "Knob 2", value: 0, slots: defaultSlots() },
-    { id: "fader-1", type: "fader", label: "Fader 1", value: 0, slots: defaultSlots() },
-    { id: "button-1", type: "button", label: "Button 1", value: 0, slots: defaultSlots() }
-  ];
+  return buildRigControls();
 }
 
 export function App() {
   const defaults = defaultProjectState();
   const midiApi = typeof window !== "undefined" ? window.midi : undefined;
   const [ports, setPorts] = useState<MidiPorts>({ inputs: [], outputs: [] });
-  const portsRef = useRef<MidiPorts>({ inputs: [], outputs: [] });
   const [backends, setBackends] = useState<MidiBackendInfo[]>([]);
-  const [selectedIn, setSelectedIn] = useState<string | null>(null);
-  const [selectedOut, setSelectedOut] = useState<string | null>(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [devices, setDevices] = useState<DeviceConfig[]>([]);
+  const [selectedIn, setSelectedIn] = useState<string | null>(defaults.selectedIn);
+  const [selectedOut, setSelectedOut] = useState<string | null>(defaults.selectedOut);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(defaults.selectedDeviceId);
+  const [devices, setDevices] = useState<DeviceConfig[]>(() => defaults.devices);
   const [log, setLog] = useState<MidiEvent[]>([]);
   const [ccValue, setCcValue] = useState(64);
   const [note, setNote] = useState(60);
   const [loadingPorts, setLoadingPorts] = useState(false);
-  const [routes, setRoutes] = useState<RouteConfig[]>([]);
+  const [routes, setRoutes] = useState<RouteConfig[]>(() => defaults.routes);
   const [forceChannelEnabled, setForceChannelEnabled] = useState(true);
   const [routeChannel, setRouteChannel] = useState(1);
   const [allowNotes, setAllowNotes] = useState(true);
@@ -451,16 +446,15 @@ export function App() {
   const [chainIndex, setChainIndex] = useState<number>(0);
   const lastClockTickRef = useRef<number | null>(null);
   const clockBpmRef = useRef<number | null>(null);
-  const transportStartAtRef = useRef<number | null>(null);
-  const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
-  const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
+  const [controls, setControls] = useState<ControlElement[]>(() => defaults.controls);
+  const [selectedControlId, setSelectedControlId] = useState<string>(
+    defaults.selectedControlId ?? defaults.controls[0]?.id ?? "knob-monologue"
+  );
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSentStateJsonRef = useRef<string | null>(null);
   const [clockHeartbeat, setClockHeartbeat] = useState(0);
-  const [transportLocked, setTransportLocked] = useState(false);
-  const [lastTransport, setLastTransport] = useState<{ kind: "start" | "stop"; source: string; ts: number } | null>(null);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
   const selectedDeviceIdRef = useRef<string | null>(null);
@@ -468,11 +462,6 @@ export function App() {
   const learnTargetRef = useRef<{ controlId: string; slotIndex: number } | null>(null);
   const [learnStatus, setLearnStatus] = useState<"idle" | "listening" | "captured" | "timeout">("idle");
   const learnTimerRef = useRef<number | null>(null);
-  const followClockStartRef = useRef(followClockStart);
-  const pendingSnapshotRef = useRef<string | null>(null);
-  const startChainRef = useRef<() => void>(() => {});
-  const stopChainRef = useRef<() => void>(() => {});
-  const triggerSnapshotRef = useRef<(name: string) => void>(() => {});
 
   useEffect(() => {
     selectedInRef.current = selectedIn;
@@ -487,59 +476,6 @@ export function App() {
   }, [selectedDeviceId]);
 
   useEffect(() => {
-    portsRef.current = ports;
-  }, [ports]);
-
-  useEffect(() => {
-    followClockStartRef.current = followClockStart;
-  }, [followClockStart]);
-
-  useEffect(() => {
-    pendingSnapshotRef.current = pendingSnapshot;
-  }, [pendingSnapshot]);
-
-  function resolvePortName(id: string | null | undefined): string | null {
-    if (!id) return null;
-    const found = [...portsRef.current.inputs, ...portsRef.current.outputs].find((p) => p.id === id);
-    return found?.name ?? null;
-  }
-
-  function normalizeTransportEvent(evt: MidiEvent): "start" | "stop" | null {
-    if (evt.msg.t === "start") return "start";
-    if (evt.msg.t === "stop") return "stop";
-    if (evt.msg.t !== "cc") return null;
-    if (evt.msg.val <= 0) return null;
-    if (evt.msg.cc !== 105 && evt.msg.cc !== 106 && evt.msg.cc !== 107) return null;
-    const label = evt.src.name ?? resolvePortName(evt.src.id);
-    if (!label) return null;
-    const oxi = analyzeOxiPortName(label);
-    if (!oxi.isOxi) return null;
-    return evt.msg.cc === 105 ? "stop" : "start";
-  }
-
-  function handleTransportSignal(kind: "start" | "stop", evt: MidiEvent) {
-    const label = formatPortLabel(evt.src.name ?? resolvePortName(evt.src.id) ?? evt.src.id);
-    const ts = evt.ts ?? Date.now();
-    setLastTransport({ kind, source: label, ts });
-    if (kind === "start") {
-      transportStartAtRef.current = ts;
-      setTransportLocked(true);
-      if (pendingSnapshotRef.current) {
-        triggerSnapshotRef.current(pendingSnapshotRef.current);
-      }
-      if (followClockStartRef.current) {
-        startChainRef.current();
-      }
-    } else {
-      transportStartAtRef.current = null;
-      setTransportLocked(false);
-      if (followClockStartRef.current) {
-        stopChainRef.current();
-      }
-    }
-  }
-
-  useEffect(() => {
     if (!midiApi) return;
 
     let cancelled = false;
@@ -550,14 +486,24 @@ export function App() {
 
       const state = loaded?.state;
       if (state) {
-        setSelectedIn(state.selectedIn);
-        setSelectedOut(state.selectedOut);
+        const nextDevices =
+          Array.isArray(state.devices) && state.devices.length > 0
+            ? state.devices.slice(0, MAX_DEVICES)
+            : defaults.devices;
+        const nextRoutes = Array.isArray(state.routes) && state.routes.length > 0 ? state.routes : defaults.routes;
+        const nextControls =
+          Array.isArray(state.controls) && state.controls.length > 0 ? state.controls : defaultControls();
+
+        setSelectedIn(state.selectedIn ?? defaults.selectedIn);
+        setSelectedOut(state.selectedOut ?? defaults.selectedOut);
         setActiveView(state.activeView ?? "setup");
-        setSelectedDeviceId(state.selectedDeviceId);
-        setDevices(Array.isArray(state.devices) ? state.devices.slice(0, MAX_DEVICES) : []);
-        setRoutes(Array.isArray(state.routes) ? state.routes : []);
-        setControls(Array.isArray(state.controls) && state.controls.length > 0 ? state.controls : defaultControls());
-        setSelectedControlId(state.selectedControlId ?? "knob-1");
+        setSelectedDeviceId(state.selectedDeviceId ?? nextDevices[0]?.id ?? defaults.selectedDeviceId ?? null);
+        setDevices(nextDevices);
+        setRoutes(nextRoutes);
+        setControls(nextControls);
+        setSelectedControlId(
+          state.selectedControlId ?? nextControls[0]?.id ?? defaults.selectedControlId ?? "knob-monologue"
+        );
         setForceChannelEnabled(state.ui?.routeBuilder?.forceChannelEnabled ?? true);
         setRouteChannel(state.ui?.routeBuilder?.routeChannel ?? 1);
         setAllowNotes(state.ui?.routeBuilder?.allowNotes ?? true);
@@ -591,8 +537,11 @@ export function App() {
       const validOut =
         state?.selectedOut && available.outputs.some((p) => p.id === state.selectedOut) ? state.selectedOut : null;
 
-      setSelectedIn(validIn ?? available.inputs[0]?.id ?? null);
-      setSelectedOut(validOut ?? available.outputs[0]?.id ?? null);
+      const defaultIn = validIn ?? available.inputs[0]?.id ?? null;
+      const defaultOut = validOut ?? available.outputs[0]?.id ?? null;
+
+      setSelectedIn(defaultIn);
+      setSelectedOut(defaultOut);
 
       setDevices((current) =>
         current.slice(0, MAX_DEVICES).map((d) => ({
@@ -603,9 +552,15 @@ export function App() {
       );
 
       setRoutes((current) =>
-        current.filter(
-          (r) => available.inputs.some((p) => p.id === r.fromId) && available.outputs.some((p) => p.id === r.toId)
-        )
+        current.map((route) => {
+          const hasIn = route.fromId && available.inputs.some((p) => p.id === route.fromId);
+          const hasOut = route.toId && available.outputs.some((p) => p.id === route.toId);
+          return {
+            ...route,
+            fromId: hasIn ? route.fromId : route.fromId ? defaultIn ?? route.fromId : route.fromId,
+            toId: hasOut ? route.toId : route.toId ? defaultOut ?? route.toId : route.toId
+          };
+        })
       );
 
       setProjectHydrated(true);
@@ -679,9 +634,11 @@ export function App() {
         lastClockTickRef.current = now;
       }
 
-      const transportKind = normalizeTransportEvent(evt);
-      if (transportKind) {
-        handleTransportSignal(transportKind, evt);
+      if (evt.msg.t === "start" && followClockStart) {
+        startChain();
+      }
+      if (evt.msg.t === "stop" && followClockStart) {
+        stopChain();
       }
     });
     return () => {
@@ -709,7 +666,8 @@ export function App() {
 
   useEffect(() => {
     if (midiApi) {
-      void midiApi.setRoutes(routes);
+      const activeRoutes = routes.filter((r) => r.fromId && r.toId);
+      void midiApi.setRoutes(activeRoutes);
     }
   }, [routes, midiApi]);
 
@@ -946,9 +904,9 @@ export function App() {
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
-      selectedDeviceId: null,
+      selectedDeviceId: base.selectedDeviceId,
       controls: defaultControls(),
-      selectedControlId: "knob-1"
+      selectedControlId: base.selectedControlId ?? base.controls[0]?.id ?? "knob-monologue"
     };
 
     setActiveView(state.activeView);
@@ -956,7 +914,7 @@ export function App() {
     setDevices(state.devices);
     setRoutes(state.routes);
     setControls(state.controls);
-    setSelectedControlId(state.selectedControlId ?? "knob-1");
+    setSelectedControlId(state.selectedControlId ?? base.selectedControlId ?? "knob-monologue");
     setForceChannelEnabled(state.ui.routeBuilder.forceChannelEnabled);
     setRouteChannel(state.ui.routeBuilder.routeChannel);
     setAllowNotes(state.ui.routeBuilder.allowNotes);
@@ -1320,24 +1278,13 @@ export function App() {
     }
   }
 
-  function computeGridDelayMs(bars: number, effectiveBpm: number) {
-    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
-    const cycle = qMs * Math.max(1, bars);
-    if (cycle <= 0) return 0;
-    const origin = transportStartAtRef.current;
-    if (!origin) return cycle;
-    const now = Date.now();
-    if (now <= origin) return cycle;
-    const cyclesElapsed = Math.floor((now - origin) / cycle);
-    const nextAt = origin + (cyclesElapsed + 1) * cycle;
-    return Math.max(0, nextAt - now);
-  }
-
   function triggerSnapshot(name: string) {
     clearSnapshotTimer();
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const waitMs = computeGridDelayMs(1, effectiveBpm);
-    if (waitMs === 0 || snapshotMode === "jump") {
+    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
+  const shouldDelay = snapshotMode === "commit" && qMs > 0;
+  const waitMs = shouldDelay ? qMs : qMs;
+    if (qMs === 0 || snapshotMode === "jump") {
       setActiveSnapshot(name);
       void sendSnapshotNow();
       setPendingSnapshot(null);
@@ -1362,7 +1309,7 @@ export function App() {
     setChainIndex(idx);
     triggerSnapshot(chainSteps[idx].snapshot);
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const delayMs = computeGridDelayMs(Math.max(1, chainSteps[idx].bars), effectiveBpm);
+    const delayMs = quantizeToMs(snapshotQuantize, effectiveBpm) * Math.max(1, chainSteps[idx].bars);
     if (delayMs === 0) {
       playChainStep(idx + 1);
       return;
@@ -1389,12 +1336,6 @@ export function App() {
     setChainIndex(0);
     setPendingSnapshot(null);
   }
-
-  useEffect(() => {
-    startChainRef.current = startChain;
-    stopChainRef.current = stopChain;
-    triggerSnapshotRef.current = triggerSnapshot;
-  }, [startChain, stopChain, triggerSnapshot]);
 
   function addChainStep() {
     if (snapshots.length === 0) return;
@@ -1468,9 +1409,10 @@ export function App() {
 
   const route = activeView;
   const monitorRows = activity.slice(0, 12);
-  const lastTransportLabel = lastTransport
-    ? `${lastTransport.kind === "start" ? "Start" : "Stop"} • ${lastTransport.source}`
-    : "No transport";
+  const rigSummary = useMemo(() => {
+    const labels = rigRouteLabels(devices);
+    return labels.length ? labels.join(" • ") : "Rig not set";
+  }, [devices]);
 
   return (
     <div style={styles.window}>
@@ -1506,8 +1448,7 @@ export function App() {
               ? formatPortLabel(ports.outputs.find((p) => p.id === selectedOut)?.name ?? selectedOut)
               : "No output"
           }
-          transportLocked={transportLocked}
-          lastTransportLabel={lastTransportLabel}
+          rigSummary={rigSummary}
         />
         <BodySplitPane>
           <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} onPanic={panicAll} />
@@ -1604,8 +1545,7 @@ function TopStatusBar({
   backendLabel,
   inputLabel,
   outputLabel,
-  transportLocked,
-  lastTransportLabel
+  rigSummary
 }: {
   saveLabel: string;
   lastSavedAt: number | null;
@@ -1626,8 +1566,7 @@ function TopStatusBar({
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
-  transportLocked: boolean;
-  lastTransportLabel: string;
+  rigSummary: string;
 }) {
   return (
     <>
@@ -1652,6 +1591,7 @@ function TopStatusBar({
         backendLabel={backendLabel}
         inputLabel={inputLabel}
         outputLabel={outputLabel}
+        rigLabel={rigSummary}
         clockLabel={
           useClockSync
             ? clockStale
@@ -1659,8 +1599,6 @@ function TopStatusBar({
               : `Clock: ${clockBpm?.toFixed(1) ?? "??"} bpm`
             : "Clock: Manual"
         }
-        transportLocked={transportLocked}
-        lastTransportLabel={lastTransportLabel}
       />
     </>
   );
@@ -1793,15 +1731,13 @@ function StatusStrip({
   inputLabel,
   outputLabel,
   clockLabel,
-  transportLocked,
-  lastTransportLabel
+  rigLabel
 }: {
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
   clockLabel: string;
-  transportLocked: boolean;
-  lastTransportLabel: string;
+  rigLabel: string;
 }) {
   return (
     <div style={{ ...styles.bottomBar, backgroundColor: "#0f0f0f", borderTop: "1px solid #1e1e1e" }}>
@@ -1809,14 +1745,14 @@ function StatusStrip({
         <span style={styles.muted}>Backend:</span> <span style={styles.valueText}>{backendLabel}</span>
       </div>
       <div style={styles.row}>
+        <span style={styles.muted}>Rig:</span> <span style={styles.valueText}>{rigLabel}</span>
+      </div>
+      <div style={styles.row}>
         <span style={styles.muted}>In:</span> <span style={styles.valueText}>{inputLabel}</span>
         <span style={styles.muted}>Out:</span> <span style={styles.valueText}>{outputLabel}</span>
       </div>
       <div style={styles.row}>
         <span style={styles.muted}>{clockLabel}</span>
-        <span style={{ ...styles.dot, backgroundColor: transportLocked ? "#35c96a" : "#555", marginLeft: 8 }} />
-        <span style={styles.valueText}>{transportLocked ? "Transport locked" : "Transport idle"}</span>
-        <span style={{ ...styles.muted, marginLeft: 8 }}>{lastTransportLabel}</span>
       </div>
     </div>
   );
