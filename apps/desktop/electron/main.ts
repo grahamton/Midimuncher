@@ -10,6 +10,8 @@ import type {
   SnapshotCapturePayload,
   SessionLogStatus,
   SnapshotRecallPayload,
+  SnapshotDropBundlePayload,
+  SnapshotSchedulePayload,
 } from "../shared/ipcTypes";
 import type { ProjectState, SequencerApplyPayload } from "../shared/projectTypes";
 import type { BackendId } from "./backends/types";
@@ -62,6 +64,11 @@ app.whenReady().then(() => {
   projectStore = new ProjectStore({ dir: app.getPath("userData") });
   sessionLogger = new SessionLogger(path.join(app.getPath("userData"), "session-logs"));
   const snapshotService = new SnapshotService(midiBridge, sessionLogger);
+  snapshotService.setStatusEmitter((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("snapshot:status", status);
+    }
+  });
   createWindow();
 
   ipcMain.handle("midi:listPorts", () => midiBridge.listPorts());
@@ -144,6 +151,18 @@ app.whenReady().then(() => {
   ipcMain.handle("snapshot:recall", (_event, payload: SnapshotRecallPayload) => {
     sessionLogger?.log("ipc", { name: "snapshot:recall", strategy: payload?.strategy ?? null });
     return snapshotService.recall(payload);
+  });
+  ipcMain.handle("snapshot:schedule", (_event, payload: SnapshotSchedulePayload) => {
+    sessionLogger?.log("ipc", { name: "snapshot:schedule", strategy: payload?.strategy ?? null });
+    return snapshotService.schedule(payload);
+  });
+  ipcMain.handle("snapshot:scheduleDropBundle", (_event, payload: SnapshotDropBundlePayload) => {
+    sessionLogger?.log("ipc", { name: "snapshot:scheduleDropBundle" });
+    return snapshotService.scheduleDropBundle(payload);
+  });
+  ipcMain.handle("snapshot:flushQueue", () => {
+    sessionLogger?.log("ipc", { name: "snapshot:flushQueue" });
+    return snapshotService.flushQueue();
   });
 
   ipcMain.handle("session:status", () => (sessionLogger?.status() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);

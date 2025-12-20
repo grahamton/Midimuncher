@@ -7,8 +7,11 @@ import type {
   MidiSendPayload,
   RouteConfig,
   SessionLogStatus,
+  SnapshotDropBundlePayload,
   SnapshotCapturePayload,
-  SnapshotRecallPayload
+  SnapshotQueueStatus,
+  SnapshotRecallPayload,
+  SnapshotSchedulePayload
 } from "../shared/ipcTypes";
 import type { ProjectDoc, ProjectState, SequencerApplyPayload } from "../shared/projectTypes";
 
@@ -26,6 +29,10 @@ const midiApi = {
   flushProject: (): Promise<boolean> => ipcRenderer.invoke("project:flush"),
   captureSnapshot: (payload?: SnapshotCapturePayload): Promise<SnapshotState> => ipcRenderer.invoke("snapshot:capture", payload),
   recallSnapshot: (payload: SnapshotRecallPayload): Promise<boolean> => ipcRenderer.invoke("snapshot:recall", payload),
+  scheduleSnapshot: (payload: SnapshotSchedulePayload): Promise<boolean> => ipcRenderer.invoke("snapshot:schedule", payload),
+  scheduleDropBundle: (payload: SnapshotDropBundlePayload): Promise<boolean> =>
+    ipcRenderer.invoke("snapshot:scheduleDropBundle", payload),
+  flushSnapshotQueue: (): Promise<boolean> => ipcRenderer.invoke("snapshot:flushQueue"),
   sessionStatus: (): Promise<SessionLogStatus> => ipcRenderer.invoke("session:status"),
   sessionStart: (): Promise<SessionLogStatus> => ipcRenderer.invoke("session:start"),
   sessionStop: (): Promise<SessionLogStatus> => ipcRenderer.invoke("session:stop"),
@@ -35,6 +42,11 @@ const midiApi = {
     const handler = (_: Electron.IpcRendererEvent, data: MidiEvent) => listener(data);
     ipcRenderer.on("midi:event", handler);
     return () => ipcRenderer.removeListener("midi:event", handler);
+  },
+  onSnapshotStatus: (listener: (status: SnapshotQueueStatus) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, data: SnapshotQueueStatus) => listener(data);
+    ipcRenderer.on("snapshot:status", handler);
+    return () => ipcRenderer.removeListener("snapshot:status", handler);
   }
 };
 

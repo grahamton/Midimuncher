@@ -2,9 +2,9 @@
 
 Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app + OXI over USB MIDI, OXI routes DIN/TRS downstream). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
 
-Current status (Dec 2025): Surfaces board and control primitives are live and emit mapped MIDI; mapping page has per-slot editing and a stub assignment wizard; snapshot pads/morph UI refreshed; macro multi-bind demo with rate limiting exists in the lab. A new Stage/Performance layout (Neuzeit Drop + Condukt-inspired) is being prototyped to unify scene launch, transition “Drop” fader, and rig-aware instrument strips for the OXI-driven setup (Monologue, MicroFreak, Pro VS Mini, Digitakt).
+Current status (Dec 2025): Surfaces board and control primitives are live and emit mapped MIDI; mapping page has per-slot editing and a stub assignment wizard; snapshot scheduler (queueing + cycle-aware commit + burst limiting) is live; Stage page has Launch (quantized) and Drop (commit + optional macro ramp) as a bundled transition. A new Stage/Performance layout (Neuzeit Drop + Condukt-inspired) is being iterated to unify scene launch, transition “Drop” fader, and rig-aware instrument strips for the OXI-driven setup (Monologue, MicroFreak, Pro VS Mini, Digitakt).
 
-Status vs goals: Phase 0–2 shipped; Phase 3 snapshot features are in-progress (pads/morph UI ready, transition scheduling and burst limiting next); Phase 4 performance surfaces are moving with the Stage view prototype; Phase 7 OXI transport consumption is queued to align drops to clock/transport.
+Status vs goals: Phase 0–2 shipped; Phase 3 snapshot scheduling/burst limiting + queueing are live, with morphing and assignment-flow improvements still pending; Phase 4 performance surfaces are moving with the Stage view prototype and Drop bundle work; Phase 7 OXI transport consumption is queued to align drops to clock/transport.
 
 ## Phases
 
@@ -26,7 +26,8 @@ Status vs goals: Phase 0–2 shipped; Phase 3 snapshot features are in-progress 
 - **Phase 3 - Snapshots, Jump, Commit**
   - Snapshot = per-device CC state + optional one-shots; stores BPM and metadata.
   - 20 banks A- 20 snapshots per project.
-  - Jump (fade, incl. zero), Commit (cycle-end, no fade); global cycle length 1-32 bars.
+  - Jump (fade, incl. zero), Commit (cycle-end, no fade); global cycle length 1-32 bars; queue/flush behavior.
+  - Snapshot scheduling runs in the main process and uses OXI clock by default (selectable), with internal alignment when not clocked.
   - Burst limiting on recall: 5-10ms spacing between outgoing messages to avoid choking OXI/synth buffers; optional per-parameter slew to prevent zippering on fast recalls.
   - Snapshot pads grid for live recall (big touch targets) with color labels per pad.
   - Snapshot morphing crossfader: interpolate between two snapshots with per-parameter curves; support staged fades (e.g., slow filters, fast mutes).
@@ -34,7 +35,7 @@ Status vs goals: Phase 0–2 shipped; Phase 3 snapshot features are in-progress 
 
 - **Phase 4 - Performance surfaces (Condukt-inspired)**
   - Board/page system: Sound Design Lab (dense editing), Performance surface (macro faders/XY), Mix desk (levels/pan/mutes); one-tap page switching.
-  - Stage view (Neuzeit Drop + Condukt mashup): scene launcher with quantized “Drop” transitions, transition progress fader, and rig-aware instrument strips for OXI lanes 1–4 (Monologue, MicroFreak, Pro VS Mini, Digitakt).
+  - Stage view (Neuzeit Drop + Condukt mashup): scene launcher with quantized Launch and a bundled Drop transition (commit-at-cycle-end + optional macro ramp), transition progress fader, and rig-aware instrument strips for OXI lanes 1–4 (Monologue, MicroFreak, Pro VS Mini, Digitakt).
   - Resizable controls (fader/knob/crossfader/button/step grid) with orientation presets (1x2, 1x3, 2x1, 3x1) and multi-touch; includes value taper and coarse/fine drag.
   - Macro faders driving multiple targets with per-target min/max, curve type (linear/inverse/exponential/log), and optional channel overrides; bi-directional feedback rendering.
   - Instrument-aware picker: browse/search CC/NRPN by name/category; quick-add sets for envelopes, filters, LFOs, sequencer params; assignment wizard for rapid multi-bind and bulk color tagging.

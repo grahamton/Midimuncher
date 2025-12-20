@@ -69,6 +69,11 @@ describe("coerceProjectDoc", () => {
     assert.equal(dirty.state.useClockSync, defaultProjectDoc().state.useClockSync);
     assert.equal(dirty.state.followClockStart, defaultProjectDoc().state.followClockStart);
     assert.equal(dirty.state.snapshotFadeMs, defaultProjectDoc().state.snapshotFadeMs);
+    assert.equal(dirty.state.snapshotClockSource, defaultProjectDoc().state.snapshotClockSource);
+    assert.equal(dirty.state.snapshotCycleBars, defaultProjectDoc().state.snapshotCycleBars);
+    assert.equal(dirty.state.stageDropControlId, defaultProjectDoc().state.stageDropControlId);
+    assert.equal(dirty.state.stageDropToValue, defaultProjectDoc().state.stageDropToValue);
+    assert.equal(dirty.state.stageDropDurationMs, defaultProjectDoc().state.stageDropDurationMs);
     assert.equal(dirty.state.chainSteps.length, defaultProjectDoc().state.chainSteps.length);
   });
 });

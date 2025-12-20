@@ -6,8 +6,11 @@ import type {
   MidiSendPayload,
   RouteConfig,
   SessionLogStatus,
+  SnapshotDropBundlePayload,
   SnapshotCapturePayload,
-  SnapshotRecallPayload
+  SnapshotQueueStatus,
+  SnapshotRecallPayload,
+  SnapshotSchedulePayload
 } from "../../shared/ipcTypes";
 import type { ProjectDoc, ProjectState, SequencerApplyPayload } from "../../shared/projectTypes";
 
@@ -25,12 +28,16 @@ export type MidiApi = {
   flushProject: () => Promise<boolean>;
   captureSnapshot: (payload?: SnapshotCapturePayload) => Promise<SnapshotState>;
   recallSnapshot: (payload: SnapshotRecallPayload) => Promise<boolean>;
+  scheduleSnapshot: (payload: SnapshotSchedulePayload) => Promise<boolean>;
+  scheduleDropBundle: (payload: SnapshotDropBundlePayload) => Promise<boolean>;
+  flushSnapshotQueue: () => Promise<boolean>;
   sessionStatus: () => Promise<SessionLogStatus>;
   sessionStart: () => Promise<SessionLogStatus>;
   sessionStop: () => Promise<SessionLogStatus>;
   sessionReveal: () => Promise<string | null>;
   applySequencer: (payload: SequencerApplyPayload) => Promise<boolean>;
   onEvent: (listener: (evt: MidiEvent) => void) => () => void;
+  onSnapshotStatus: (listener: (status: SnapshotQueueStatus) => void) => () => void;
 };
 
 declare global {

@@ -17,10 +17,10 @@ How to run next time
 5) See `docs/engineering.md` for the current eng playbook (commands, stability checklist).
 
 Known gaps / next steps
-- Add basic lint/test scripts for desktop package.
+- Snapshot morphing and per-parameter slew.
+- Stage mode: rig-aware instrument strips + transition progress fader.
 - Improve Content-Security-Policy for production build.
-- Consider persisting last-selected MIDI ports.
-- Add routing graph UI (beyond single passthrough) per brief.
+- OXI transport consumption to align drops to clock/transport.
 
 Notes
 - If `pnpm` isn’t on PATH, always use `corepack pnpm ...`.

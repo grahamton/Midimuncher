@@ -63,6 +63,48 @@ export type SnapshotRecallPayload = {
   burst?: SnapshotBurstLimit;
 };
 
+export type SnapshotClockSource = "oxi" | "internal";
+
+export type SnapshotQuantizeKind = "immediate" | "beat" | "bar" | "bar4";
+
+export type SnapshotSchedulePayload = {
+  snapshotId?: string | null;
+  snapshotName?: string | null;
+  snapshot: SnapshotState;
+  strategy: SnapshotRecallStrategy;
+  fadeMs?: number;
+  commitDelayMs?: number;
+  burst?: SnapshotBurstLimit;
+  clockSource?: SnapshotClockSource;
+  quantize?: SnapshotQuantizeKind;
+  cycleLengthBars?: number;
+  bpm?: number | null;
+};
+
+export type MacroRampPayload = {
+  control: ControlElement;
+  from: number;
+  to: number;
+  durationMs: number;
+  stepMs?: number;
+  perSendSpacingMs?: number;
+};
+
+export type SnapshotDropBundlePayload = {
+  schedule: SnapshotSchedulePayload;
+  macroRamp?: MacroRampPayload | null;
+};
+
+export type SnapshotQueueStatus = {
+  queueLength: number;
+  executing: boolean;
+  armed: boolean;
+  activeSnapshotId: string | null;
+  activeSnapshotName: string | null;
+  clockRunning: boolean;
+  clockSource: SnapshotClockSource;
+};
+
 export type SnapshotCapturePayload = {
   notes?: string | null;
   bpm?: number | null;

@@ -24,23 +24,26 @@ Current desktop app highlights
 - Routing patchbay with filters, channel force/passthrough, clock thinning, loop guard
 - Mapping v1: virtual controls (8 slots) with curves/ranges + MIDI Learn (CC), Program Change + Note slots; inline slot editor now has enable toggles, device pickers, curve/min/max, and a macro multi-bind shortcut
 - Surfaces board: live fader/knob/button cards wired to mapping emit; Surfaces Lab demos macro multi-bind with rate limiting and per-target curves
-- Snapshots: color-coded pads, quantize/jump/commit controls, conceptual morph stub
+- Snapshots: 20x20 banks, Jump/Commit at cycle boundaries, burst-limited recall, queue + flush, clock source selection (OXI default) and cycle bars (1–32)
+- Stage: scene launcher with Launch (quantized) and Drop (commit + optional macro ramp)
 - Persistence: saved project state (devices/routes/mapping) under Electron userData
 - Diagnostics card (sends test note), monitor view, manual ping (note/CC), outgoing messages visible in Monitor
 
 Latest updates (Dec 2025)
 - Added Surfaces board and control primitives (fader/knob/crossfader/pads/step grid) with coarse/fine drag and bi-directional feedback
 - Mapping page: slot editor now supports device selection, per-slot enable, curve/min/max editing; macro multi-bind button; assignment wizard stub with multi-select CCs, curve/range/start slot/device, and color highlighting
-- Snapshot UI refreshed with large pads and morph placeholder
+- Snapshot scheduler moved to main process (queueing + cycle-aware commit); Stage Drop supports a bundled macro ramp
 
 Roadmap (see `docs/roadmap.md` for full details)
 - Phase 0: MIDI backend abstraction (done)
 - Phase 1: Device graph + routing UI (done)
 - Phase 2: Mapping engine v1 (done)
-- Phase 3: Snapshots (20x20), Jump/Commit cycle-end behavior
-- Phase 4: Chain mode (20 chains, 64 steps)
-- Phase 5: OXI integration templates/presets
-- Phase 6: Optional grid/DAW features
+- Phase 3: Snapshots (20x20), Jump/Commit cycle-end, recall scheduler + burst limiting
+- Phase 4: Performance surfaces (Stage/Drop, macro surfaces)
+- Phase 5: Software modulation + generative
+- Phase 6: Chain mode
+- Phase 7: OXI integration templates/presets
+- Phase 8: Optional grid/DAW features
 
 Docs
 - docs/product-brief.md

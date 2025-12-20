@@ -12,6 +12,7 @@ import type { RouteConfig } from "./ipcTypes";
 
 export type SnapshotMode = SnapshotRecallStrategy;
 export type SnapshotQuantize = "immediate" | "bar1" | "bar4";
+export type SnapshotClockSource = "oxi" | "internal";
 
 export type DeviceConfig = {
   id: string;
@@ -111,6 +112,13 @@ export type ProjectStateV1 = {
   snapshotQuantize: SnapshotQuantize;
   snapshotMode: SnapshotMode;
   snapshotFadeMs: number;
+  snapshotClockSource: SnapshotClockSource;
+  snapshotCycleBars: number;
+  stageDropControlId: string | null;
+  stageDropToValue: number;
+  stageDropDurationMs: number;
+  stageDropStepMs: number;
+  stageDropPerSendSpacingMs: number;
   activeView: Exclude<AppView, "snapshots">;
   selectedDeviceId: string | null;
   devices: DeviceConfig[];
@@ -294,6 +302,13 @@ function defaultProjectStateV1(): ProjectStateV1 {
     snapshotQuantize: "bar1",
     snapshotMode: "jump",
     snapshotFadeMs: defaultSnapshotsState().fadeMs,
+    snapshotClockSource: "oxi",
+    snapshotCycleBars: 4,
+    stageDropControlId: null,
+    stageDropToValue: 127,
+    stageDropDurationMs: 350,
+    stageDropStepMs: 30,
+    stageDropPerSendSpacingMs: 6,
     activeView: "setup",
     selectedDeviceId: null,
     devices: [],
@@ -643,6 +658,19 @@ function sanitizeSnapshotMode(value: unknown, fallback: SnapshotMode): SnapshotM
   return value === "commit" || value === "jump" ? value : fallback;
 }
 
+function sanitizeSnapshotClockSource(
+  value: unknown,
+  fallback: SnapshotClockSource
+): SnapshotClockSource {
+  return value === "oxi" || value === "internal" ? value : fallback;
+}
+
+function clampSnapshotCycleBars(value: unknown, fallback: number): number {
+  const bars = Math.round(asNumberOr(value, fallback));
+  if (!Number.isFinite(bars)) return fallback;
+  return Math.min(Math.max(bars, 1), 32);
+}
+
 function sanitizeAppView(raw: unknown): AppView {
   const view = raw as AppView;
   return view === "setup" ||
@@ -694,6 +722,34 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     (raw as any)?.snapshotFadeMs,
     stateDefaults.snapshotFadeMs
   );
+  const snapshotClockSource = sanitizeSnapshotClockSource(
+    (raw as any)?.snapshotClockSource,
+    stateDefaults.snapshotClockSource
+  );
+  const snapshotCycleBars = clampSnapshotCycleBars(
+    (raw as any)?.snapshotCycleBars,
+    stateDefaults.snapshotCycleBars
+  );
+  const stageDropControlId = asStringOrNull((raw as any)?.stageDropControlId);
+  const stageDropToValue = Math.min(
+    Math.max(Math.round(asNumberOr((raw as any)?.stageDropToValue, stateDefaults.stageDropToValue)), 0),
+    127
+  );
+  const stageDropDurationMs = clampMs(
+    (raw as any)?.stageDropDurationMs,
+    stateDefaults.stageDropDurationMs,
+    60_000
+  );
+  const stageDropStepMs = clampMs(
+    (raw as any)?.stageDropStepMs,
+    stateDefaults.stageDropStepMs,
+    2000
+  );
+  const stageDropPerSendSpacingMs = clampMs(
+    (raw as any)?.stageDropPerSendSpacingMs,
+    stateDefaults.stageDropPerSendSpacingMs,
+    2000
+  );
 
   const activeView = sanitizeAppViewV1(raw.activeView);
 
@@ -726,6 +782,13 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     snapshotQuantize,
     snapshotMode,
     snapshotFadeMs,
+    snapshotClockSource,
+    snapshotCycleBars,
+    stageDropControlId,
+    stageDropToValue,
+    stageDropDurationMs,
+    stageDropStepMs,
+    stageDropPerSendSpacingMs,
     activeView,
     selectedDeviceId: asStringOrNull(raw.selectedDeviceId),
     devices,

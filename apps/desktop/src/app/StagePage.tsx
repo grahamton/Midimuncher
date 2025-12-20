@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { BridgeClock } from "../services/midiBridge";
+import type { SnapshotQuantizeKind } from "../../shared/ipcTypes";
 import { describePhase, quantizeLaunch, type QuantizeKind } from "./lib/stage/transition";
 
 export type StagePageProps = {
   clock: BridgeClock;
   snapshots: string[];
   activeSnapshot: string | null;
-  onSelectSnapshot: (name: string) => void;
+  onSelectSnapshot: (name: string, quantize: SnapshotQuantizeKind) => void;
+  onDrop: (name: string) => void;
+  dropMacroControls: Array<{ id: string; label: string }>;
+  dropMacroControlId: string | null;
+  onChangeDropMacroControlId: (id: string | null) => void;
+  dropMacroToValue: number;
+  onChangeDropMacroToValue: (value: number) => void;
+  dropDurationMs: number;
+  onChangeDropDurationMs: (ms: number) => void;
 };
 
 type TransitionState =
@@ -16,7 +25,20 @@ type TransitionState =
 
 const colors = ["#38bdf8", "#f472b6", "#22d3ee", "#f97316", "#a3e635", "#c084fc", "#facc15", "#fb7185"];
 
-export function StagePage({ clock, snapshots, activeSnapshot, onSelectSnapshot }: StagePageProps) {
+export function StagePage({
+  clock,
+  snapshots,
+  activeSnapshot,
+  onSelectSnapshot,
+  onDrop,
+  dropMacroControls,
+  dropMacroControlId,
+  onChangeDropMacroControlId,
+  dropMacroToValue,
+  onChangeDropMacroToValue,
+  dropDurationMs,
+  onChangeDropDurationMs
+}: StagePageProps) {
   const [quantize, setQuantize] = useState<QuantizeKind>("bar");
   const [transition, setTransition] = useState<TransitionState>({ status: "idle" });
   const timerRef = useRef<number | null>(null);
@@ -29,24 +51,31 @@ export function StagePage({ clock, snapshots, activeSnapshot, onSelectSnapshot }
     };
   }, []);
 
+  const mapQuantize = (kind: QuantizeKind, immediate: boolean): SnapshotQuantizeKind => {
+    if (immediate) return "immediate";
+    return kind === "beat" ? "beat" : "bar";
+  };
+
   const armScene = (scene: string) => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
 
     const launch = quantizeLaunch(clock, quantize);
-    if (launch.delayMs <= 0 || clock.stale) {
-      executeScene(scene);
-      return;
-    }
-
     setTransition({ status: "armed", scene, dueAt: launch.dueAt, quantize });
-    timerRef.current = window.setTimeout(() => {
-      executeScene(scene);
-    }, launch.delayMs);
+
+    const quantizeKind = mapQuantize(quantize, launch.delayMs <= 0 || clock.stale);
+    onSelectSnapshot(scene, quantizeKind);
+
+    executeScene(scene);
+  };
+
+  const dropScene = (scene: string) => {
+    setTransition({ status: "armed", scene, dueAt: Date.now(), quantize: "bar" });
+    onDrop(scene);
+    executeScene(scene);
   };
 
   const executeScene = (scene: string) => {
     setTransition({ status: "executing", scene });
-    onSelectSnapshot(scene);
     timerRef.current = window.setTimeout(() => setTransition({ status: "idle" }), 400);
   };
 
@@ -86,6 +115,37 @@ export function StagePage({ clock, snapshots, activeSnapshot, onSelectSnapshot }
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {statusBadge}
+          <select
+            style={styles.select}
+            value={dropMacroControlId ?? ""}
+            onChange={(e) => onChangeDropMacroControlId(e.target.value || null)}
+            title="Control to ramp during Drop (uses mapping slots for fan-out)."
+          >
+            <option value="">Drop macro: none</option>
+            {dropMacroControls.map((c) => (
+              <option key={c.id} value={c.id}>
+                Drop macro: {c.label}
+              </option>
+            ))}
+          </select>
+          <input
+            style={{ ...styles.select, width: 110 }}
+            type="number"
+            min={0}
+            max={127}
+            value={dropMacroToValue}
+            onChange={(e) => onChangeDropMacroToValue(Number(e.target.value) || 0)}
+            title="Drop macro target value (0–127)."
+          />
+          <input
+            style={{ ...styles.select, width: 120 }}
+            type="number"
+            min={0}
+            max={5000}
+            value={dropDurationMs}
+            onChange={(e) => onChangeDropDurationMs(Number(e.target.value) || 0)}
+            title="Drop macro ramp duration in ms."
+          />
           <select style={styles.select} value={quantize} onChange={(e) => setQuantize(e.target.value as QuantizeKind)}>
             <option value="bar">Quantize to bar</option>
             <option value="beat">Quantize to beat</option>
@@ -100,9 +160,8 @@ export function StagePage({ clock, snapshots, activeSnapshot, onSelectSnapshot }
           const isArmed = transition.status === "armed" && transition.scene === scene;
           const isExecuting = transition.status === "executing" && transition.scene === scene;
           return (
-            <button
+            <div
               key={scene}
-              onClick={() => armScene(scene)}
               style={{
                 ...styles.card,
                 borderColor: color,
@@ -112,7 +171,24 @@ export function StagePage({ clock, snapshots, activeSnapshot, onSelectSnapshot }
             >
               <div style={styles.cardTitle}>{scene}</div>
               <div style={{ color, fontSize: 12 }}>{isActive ? "Active" : isArmed ? "Armed" : "Ready"}</div>
-            </button>
+              <div style={styles.cardActions}>
+                <button
+                  onClick={() => armScene(scene)}
+                  style={{ ...styles.cardActionBtn, borderColor: "#1f2937" }}
+                  disabled={isExecuting}
+                >
+                  Launch
+                </button>
+                <button
+                  onClick={() => dropScene(scene)}
+                  style={{ ...styles.cardActionBtn, borderColor: color }}
+                  disabled={isExecuting}
+                  title="Commit at next cycle boundary (Drop)."
+                >
+                  Drop
+                </button>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -192,7 +268,6 @@ const styles: Record<string, CSSProperties> = {
     padding: 16,
     background: "#0b1220",
     textAlign: "left",
-    cursor: "pointer",
     transition: "all 0.15s",
     color: "inherit"
   },
@@ -200,5 +275,20 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 16,
     fontWeight: 700,
     marginBottom: 8
+  },
+  cardActions: {
+    marginTop: 12,
+    display: "flex",
+    gap: 10
+  },
+  cardActionBtn: {
+    flex: 1,
+    borderRadius: 10,
+    border: "1px solid #1f2937",
+    padding: "10px 12px",
+    background: "#0f172a",
+    color: "#e2e8f0",
+    cursor: "pointer",
+    fontWeight: 700
   }
 };

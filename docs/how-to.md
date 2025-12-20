@@ -23,12 +23,17 @@ This is a quick-start guide for the desktop app as it exists today. It assumes y
 - Quick actions: live send nudges (+/-) emit mapped output; test Note/CC buttons fire the current values.
 
 ## 3) Snapshots (Snapshots tab)
-- Pads: click to trigger; the active pad is labeled; pending shows a badge when quantized.
+- Pads: click to queue; the active pad is labeled; the queue indicator shows when armed/sending.
 - Capture: select a pad and click **Capture** (or Shift+click a pad) to store the current tracked MIDI state into that slot; empty pads won’t recall anything until captured.
 - Quantize: Immediate, 1 bar, or 4 bars (uses either manual BPM or external clock if “Follow MIDI Clock” is on).
-- Mode: **Jump** (switch immediately at quantize point) or **Commit** (stage then commit).
-- Fade: set milliseconds for level transitions when switching snapshots.
-- **Send Snapshot** (from transport/status) will fire the selected snapshot immediately.
+- Mode:
+  - **Jump**: recall at the quantize point (fade applies).
+  - **Commit @ cycle end**: recall at the next cycle boundary (fade forced to 0).
+- Cycle bars: sets the cycle length (1–32 bars) used for Commit.
+- Clock: select **OXI (incoming MIDI clock)** (default) or **Internal**.
+- Fade: set milliseconds for Jump transitions when switching snapshots.
+- **Send Snapshot** queues the selected snapshot.
+- **Flush Queue** clears pending/scheduled snapshot sends.
 - Morph (placeholder): crossfade UI between two snapshots; per-parameter morphing will arrive later.
 
 ## 4) Chains (Chains tab)
@@ -36,6 +41,12 @@ This is a quick-start guide for the desktop app as it exists today. It assumes y
 - Reorder with the chevrons; remove with the trash icon; edit bar count inline.
 - **Play/Stop** starts/stops the chain; the current step highlights while playing.
 - Chain execution respects the snapshot quantize setting and the active tempo/clock source.
+
+## 4b) Stage (Stage tab)
+- **Launch**: schedules the scene snapshot at the chosen quantize (beat/bar).
+- **Drop**: schedules a bundled transition at the next cycle boundary:
+  - Snapshot recall (Commit).
+  - Optional macro ramp (uses a selected mapping control to fan out via its slots), with configurable target value and duration.
 
 ## 5) Transport & clock
 - Tempo is editable in the top bar. If **Follow MIDI Clock** is enabled, incoming clock sets tempo.

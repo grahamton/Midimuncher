@@ -44,7 +44,11 @@ import type {
   RouteConfig,
   RouteFilter,
   SessionLogStatus,
-  SnapshotRecallPayload,
+  SnapshotDropBundlePayload,
+  SnapshotClockSource,
+  SnapshotQueueStatus,
+  SnapshotQuantizeKind,
+  SnapshotSchedulePayload,
 } from "../../shared/ipcTypes";
 import { defaultProjectState } from "../../shared/projectTypes";
 import type {
@@ -60,7 +64,6 @@ import { useMidiBridgeClock, type BridgeClock } from "../services/midiBridge";
 import { StagePage } from "./StagePage";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
-import { quantizeToMs } from "./lib/tempo";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
@@ -487,7 +490,27 @@ export function App() {
     defaults.snapshotMode
   );
   const [snapshotFadeMs, setSnapshotFadeMs] = useState(defaults.snapshotFadeMs);
-  const snapshotTimerRef = useRef<number | null>(null);
+  const [snapshotClockSource, setSnapshotClockSource] =
+    useState<SnapshotClockSource>(defaults.snapshotClockSource);
+  const [snapshotCycleBars, setSnapshotCycleBars] = useState<number>(
+    defaults.snapshotCycleBars
+  );
+  const [snapshotQueueStatus, setSnapshotQueueStatus] =
+    useState<SnapshotQueueStatus | null>(null);
+  const [stageDropControlId, setStageDropControlId] = useState<string | null>(
+    defaults.stageDropControlId
+  );
+  const [stageDropToValue, setStageDropToValue] = useState<number>(
+    defaults.stageDropToValue
+  );
+  const [stageDropDurationMs, setStageDropDurationMs] = useState<number>(
+    defaults.stageDropDurationMs
+  );
+  const [stageDropStepMs, setStageDropStepMs] = useState<number>(
+    defaults.stageDropStepMs
+  );
+  const [stageDropPerSendSpacingMs, setStageDropPerSendSpacingMs] =
+    useState<number>(defaults.stageDropPerSendSpacingMs);
   const [tempoBpm, setTempoBpm] = useState(defaults.tempoBpm);
   const [useClockSync, setUseClockSync] = useState(defaults.useClockSync);
   const [followClockStart, setFollowClockStart] = useState(
@@ -594,6 +617,21 @@ export function App() {
           state.snapshotFadeMs ?? nextSnapshots.fadeMs ?? defaults.snapshotFadeMs;
         setSnapshotMode(nextMode);
         setSnapshotFadeMs(nextFadeMs);
+        setSnapshotClockSource(
+          state.snapshotClockSource ?? defaults.snapshotClockSource
+        );
+        setSnapshotCycleBars(state.snapshotCycleBars ?? defaults.snapshotCycleBars);
+        setStageDropControlId(
+          state.stageDropControlId ?? defaults.stageDropControlId
+        );
+        setStageDropToValue(state.stageDropToValue ?? defaults.stageDropToValue);
+        setStageDropDurationMs(
+          state.stageDropDurationMs ?? defaults.stageDropDurationMs
+        );
+        setStageDropStepMs(state.stageDropStepMs ?? defaults.stageDropStepMs);
+        setStageDropPerSendSpacingMs(
+          state.stageDropPerSendSpacingMs ?? defaults.stageDropPerSendSpacingMs
+        );
         setSnapshotsState({
           ...nextSnapshots,
           strategy: nextMode,
@@ -717,9 +755,19 @@ export function App() {
         stopChain();
       }
     });
+
+    const unsubscribeSnapshotStatus = midiApi.onSnapshotStatus((status) => {
+      setSnapshotQueueStatus(status);
+      if (status.queueLength === 0) {
+        setPendingSnapshotId(null);
+      } else if (status.activeSnapshotId) {
+        setPendingSnapshotId(status.activeSnapshotId);
+      }
+    });
     return () => {
       cancelled = true;
       unsubscribe();
+      unsubscribeSnapshotStatus();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [midiApi]);
@@ -799,6 +847,13 @@ export function App() {
       snapshotQuantize,
       snapshotMode: snapshotsState.strategy,
       snapshotFadeMs: snapshotsState.fadeMs,
+      snapshotClockSource,
+      snapshotCycleBars,
+      stageDropControlId,
+      stageDropToValue,
+      stageDropDurationMs,
+      stageDropStepMs,
+      stageDropPerSendSpacingMs,
       snapshots: snapshotsState,
       chainSteps,
       devices,
@@ -865,6 +920,13 @@ export function App() {
     snapshotQuantize,
     snapshotMode,
     snapshotFadeMs,
+    snapshotClockSource,
+    snapshotCycleBars,
+    stageDropControlId,
+    stageDropToValue,
+    stageDropDurationMs,
+    stageDropStepMs,
+    stageDropPerSendSpacingMs,
     snapshotsState,
     chainSteps,
     forceChannelEnabled,
@@ -896,6 +958,13 @@ export function App() {
       snapshotQuantize,
       snapshotMode,
       snapshotFadeMs,
+      snapshotClockSource,
+      snapshotCycleBars,
+      stageDropControlId,
+      stageDropToValue,
+      stageDropDurationMs,
+      stageDropStepMs,
+      stageDropPerSendSpacingMs,
       snapshots: snapshotsState,
       chainSteps,
       devices,
@@ -941,6 +1010,13 @@ export function App() {
     snapshotQuantize,
     snapshotMode,
     snapshotFadeMs,
+    snapshotClockSource,
+    snapshotCycleBars,
+    stageDropControlId,
+    stageDropToValue,
+    stageDropDurationMs,
+    stageDropStepMs,
+    stageDropPerSendSpacingMs,
     snapshotsState,
     chainSteps,
     devices,
@@ -1428,48 +1504,104 @@ export function App() {
     });
   }
 
-  async function sendSnapshotNow(snapshotId: string) {
+  function snapshotQuantizeToKind(q: SnapshotQuantize): SnapshotQuantizeKind {
+    switch (q) {
+      case "bar4":
+        return "bar4";
+      case "bar1":
+        return "bar";
+      default:
+        return "immediate";
+    }
+  }
+
+  async function scheduleSnapshot(
+    snapshotId: string,
+    overrides?: {
+      quantize?: SnapshotQuantizeKind;
+      strategy?: SnapshotMode;
+    }
+  ) {
     if (!midiApi) return;
     const found = findSnapshotSlot(snapshotId, snapshotsState);
     if (!found?.slot.snapshot) return;
-    const payload: SnapshotRecallPayload = {
+    const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
+    const strategy = overrides?.strategy ?? snapshotsState.strategy;
+    const payload: SnapshotSchedulePayload = {
+      snapshotId,
+      snapshotName: found.slot.name,
       snapshot: found.slot.snapshot,
-      strategy: snapshotsState.strategy,
+      strategy,
       fadeMs: snapshotsState.fadeMs,
       commitDelayMs: snapshotsState.commitDelayMs,
       burst: snapshotsState.burst,
+      clockSource: snapshotClockSource,
+      quantize: overrides?.quantize ?? snapshotQuantizeToKind(snapshotQuantize),
+      cycleLengthBars: snapshotCycleBars,
+      bpm: effectiveBpm,
     };
-    await midiApi.recallSnapshot(payload);
-  }
-
-  function clearSnapshotTimer() {
-    if (snapshotTimerRef.current) {
-      window.clearTimeout(snapshotTimerRef.current);
-      snapshotTimerRef.current = null;
-    }
-  }
-
-  function triggerSnapshot(snapshotId: string) {
-    clearSnapshotTimer();
-    const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
-    if (qMs === 0) {
-      setActiveSnapshotId(snapshotId);
-      void sendSnapshotNow(snapshotId);
+    const ok = await midiApi.scheduleSnapshot(payload);
+    if (!ok) {
       setPendingSnapshotId(null);
-      return;
     }
+  }
+
+  function triggerSnapshot(
+    snapshotId: string,
+    quantizeOverride?: SnapshotQuantizeKind
+  ) {
+    setActiveSnapshotId(snapshotId);
     setPendingSnapshotId(snapshotId);
-    snapshotTimerRef.current = window.setTimeout(() => {
-      setActiveSnapshotId(snapshotId);
-      void sendSnapshotNow(snapshotId);
-      setPendingSnapshotId(null);
-      snapshotTimerRef.current = null;
-    }, qMs);
+    void scheduleSnapshot(snapshotId, { quantize: quantizeOverride });
+  }
+
+  function dropSnapshot(snapshotId: string) {
+    setActiveSnapshotId(snapshotId);
+    setPendingSnapshotId(snapshotId);
+    if (!midiApi) return;
+    const found = findSnapshotSlot(snapshotId, snapshotsState);
+    if (!found?.slot.snapshot) return;
+
+    const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
+    const schedule: SnapshotSchedulePayload = {
+      snapshotId,
+      snapshotName: found.slot.name,
+      snapshot: found.slot.snapshot,
+      strategy: "commit",
+      fadeMs: snapshotsState.fadeMs,
+      commitDelayMs: snapshotsState.commitDelayMs,
+      burst: snapshotsState.burst,
+      clockSource: snapshotClockSource,
+      quantize: "immediate",
+      cycleLengthBars: snapshotCycleBars,
+      bpm: effectiveBpm,
+    };
+
+    const control =
+      stageDropControlId && controls.find((c) => c.id === stageDropControlId)
+        ? controls.find((c) => c.id === stageDropControlId)!
+        : null;
+
+    const payload: SnapshotDropBundlePayload = {
+      schedule,
+      macroRamp: control
+        ? {
+            control,
+            from: clampMidi(control.value),
+            to: clampMidi(stageDropToValue),
+            durationMs: Math.max(0, Math.round(stageDropDurationMs)),
+            stepMs: Math.max(10, Math.round(stageDropStepMs)),
+            perSendSpacingMs: Math.max(0, Math.round(stageDropPerSendSpacingMs)),
+          }
+        : null,
+    };
+
+    void midiApi.scheduleDropBundle(payload).then((ok) => {
+      if (!ok) setPendingSnapshotId(null);
+    });
   }
 
   function playChainStep(idx: number) {
-    clearSnapshotTimer();
     if (idx >= chainSteps.length) {
       setChainPlaying(false);
       setChainIndex(0);
@@ -1484,9 +1616,8 @@ export function App() {
       triggerSnapshot(snapshotId);
     }
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const delayMs =
-      quantizeToMs(snapshotQuantize, effectiveBpm) *
-      Math.max(1, chainSteps[idx].bars);
+    const barMs = 60000 / Math.max(1, effectiveBpm) * 4;
+    const delayMs = barMs * Math.max(1, chainSteps[idx].bars);
     if (delayMs === 0) {
       playChainStep(idx + 1);
       return;
@@ -1574,6 +1705,13 @@ export function App() {
       snapshotQuantize,
       snapshotMode: snapshotsState.strategy,
       snapshotFadeMs: snapshotsState.fadeMs,
+      snapshotClockSource,
+      snapshotCycleBars,
+      stageDropControlId,
+      stageDropToValue,
+      stageDropDurationMs,
+      stageDropStepMs,
+      stageDropPerSendSpacingMs,
       chainSteps,
       snapshots: snapshotsState,
       devices,
@@ -1697,7 +1835,8 @@ export function App() {
             }
             onSendSnapshot={() => {
               if (!activeSnapshotId) return;
-              void sendSnapshotNow(activeSnapshotId);
+              setPendingSnapshotId(activeSnapshotId);
+              void scheduleSnapshot(activeSnapshotId);
             }}
             onAddDeviceRoutes={addDeviceRoutes}
             updateControl={updateControl}
@@ -1705,7 +1844,19 @@ export function App() {
             snapshots={snapshotsState}
             activeSnapshotId={activeSnapshotId}
             onSelectSnapshot={triggerSnapshot}
+            onDropSnapshot={dropSnapshot}
+            stageDropControlId={stageDropControlId}
+            onChangeStageDropControlId={setStageDropControlId}
+            stageDropToValue={stageDropToValue}
+            onChangeStageDropToValue={(value) =>
+              setStageDropToValue(Math.min(Math.max(Math.round(value), 0), 127))
+            }
+            stageDropDurationMs={stageDropDurationMs}
+            onChangeStageDropDurationMs={(ms) =>
+              setStageDropDurationMs(Math.min(Math.max(Math.round(ms), 0), 60_000))
+            }
             pendingSnapshotId={pendingSnapshotId}
+            snapshotQueueStatus={snapshotQueueStatus}
             onCaptureSnapshot={(snapshotId) => {
               if (!midiApi) return;
               const effectiveBpm =
@@ -1722,8 +1873,8 @@ export function App() {
                 });
             }}
             onCancelPendingSnapshot={() => {
-              clearSnapshotTimer();
               setPendingSnapshotId(null);
+              void midiApi?.flushSnapshotQueue();
             }}
             onChangeSnapshotBank={(bankId) =>
               setSnapshotsState((current) => ({ ...current, activeBankId: bankId }))
@@ -1747,6 +1898,12 @@ export function App() {
                 ...current,
                 commitDelayMs: Math.max(0, Math.round(ms)),
               }))
+            }
+            snapshotClockSource={snapshotClockSource}
+            onChangeSnapshotClockSource={setSnapshotClockSource}
+            snapshotCycleBars={snapshotCycleBars}
+            onChangeSnapshotCycleBars={(bars) =>
+              setSnapshotCycleBars(Math.min(Math.max(Math.round(bars), 1), 32))
             }
             chainSteps={chainSteps}
             chainPlaying={chainPlaying}
@@ -2176,7 +2333,18 @@ function MainContentArea(props: {
   snapshots: SnapshotsState;
   activeSnapshotId: string | null;
   pendingSnapshotId: string | null;
-  onSelectSnapshot: (snapshotId: string) => void;
+  snapshotQueueStatus: SnapshotQueueStatus | null;
+  onSelectSnapshot: (
+    snapshotId: string,
+    quantizeOverride?: SnapshotQuantizeKind
+  ) => void;
+  onDropSnapshot: (snapshotId: string) => void;
+  stageDropControlId: string | null;
+  onChangeStageDropControlId: (id: string | null) => void;
+  stageDropToValue: number;
+  onChangeStageDropToValue: (value: number) => void;
+  stageDropDurationMs: number;
+  onChangeStageDropDurationMs: (ms: number) => void;
   onCaptureSnapshot: (snapshotId: string) => void;
   onCancelPendingSnapshot: () => void;
   onChangeSnapshotBank: (bankId: string | null) => void;
@@ -2188,6 +2356,10 @@ function MainContentArea(props: {
   onChangeSnapshotFade: (ms: number) => void;
   snapshotCommitDelayMs: number;
   onChangeSnapshotCommitDelay: (ms: number) => void;
+  snapshotClockSource: SnapshotClockSource;
+  onChangeSnapshotClockSource: (s: SnapshotClockSource) => void;
+  snapshotCycleBars: number;
+  onChangeSnapshotCycleBars: (bars: number) => void;
   chainSteps: ChainStep[];
   chainPlaying: boolean;
   chainIndex: number;
@@ -2287,6 +2459,7 @@ function RouteOutlet({
           snapshots={rest.snapshots}
           activeSnapshotId={rest.activeSnapshotId}
           pendingSnapshotId={rest.pendingSnapshotId}
+          queueStatus={rest.snapshotQueueStatus}
           onSelectSnapshot={rest.onSelectSnapshot}
           onCapture={rest.onCaptureSnapshot}
           onCancelPending={rest.onCancelPendingSnapshot}
@@ -2299,6 +2472,10 @@ function RouteOutlet({
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
           snapshotCommitDelayMs={rest.snapshotCommitDelayMs}
           onChangeSnapshotCommitDelay={rest.onChangeSnapshotCommitDelay}
+          snapshotClockSource={rest.snapshotClockSource}
+          onChangeSnapshotClockSource={rest.onChangeSnapshotClockSource}
+          snapshotCycleBars={rest.snapshotCycleBars}
+          onChangeSnapshotCycleBars={rest.onChangeSnapshotCycleBars}
         />
       );
     case "stage":
@@ -2308,15 +2485,30 @@ function RouteOutlet({
           ? findSnapshotSlot(rest.activeSnapshotId, rest.snapshots)?.slot.name ??
             null
           : null;
+        const macroControls = rest.controls.map((c) => ({
+          id: c.id,
+          label: c.label ?? c.id,
+        }));
         return (
           <StagePage
             clock={rest.clock}
             snapshots={snapshotNames}
             activeSnapshot={activeName}
-            onSelectSnapshot={(name) => {
+            onSelectSnapshot={(name, quantize) => {
               const id = findSnapshotIdByName(name, rest.snapshots);
-              if (id) rest.onSelectSnapshot(id);
+              if (id) rest.onSelectSnapshot(id, quantize);
             }}
+            onDrop={(name) => {
+              const id = findSnapshotIdByName(name, rest.snapshots);
+              if (id) rest.onDropSnapshot(id);
+            }}
+            dropMacroControls={macroControls}
+            dropMacroControlId={rest.stageDropControlId}
+            onChangeDropMacroControlId={rest.onChangeStageDropControlId}
+            dropMacroToValue={rest.stageDropToValue}
+            onChangeDropMacroToValue={rest.onChangeStageDropToValue}
+            dropDurationMs={rest.stageDropDurationMs}
+            onChangeDropDurationMs={rest.onChangeStageDropDurationMs}
           />
         );
       }
@@ -2370,6 +2562,7 @@ function RouteOutlet({
           snapshots={rest.snapshots}
           activeSnapshotId={rest.activeSnapshotId}
           pendingSnapshotId={rest.pendingSnapshotId}
+          queueStatus={rest.snapshotQueueStatus}
           onSelectSnapshot={rest.onSelectSnapshot}
           onCapture={rest.onCaptureSnapshot}
           onCancelPending={rest.onCancelPendingSnapshot}
@@ -2382,6 +2575,10 @@ function RouteOutlet({
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
           snapshotCommitDelayMs={rest.snapshotCommitDelayMs}
           onChangeSnapshotCommitDelay={rest.onChangeSnapshotCommitDelay}
+          snapshotClockSource={rest.snapshotClockSource}
+          onChangeSnapshotClockSource={rest.onChangeSnapshotClockSource}
+          snapshotCycleBars={rest.snapshotCycleBars}
+          onChangeSnapshotCycleBars={rest.onChangeSnapshotCycleBars}
         />
       );
   }
@@ -3389,6 +3586,7 @@ function SnapshotsPage({
   snapshots,
   activeSnapshotId,
   pendingSnapshotId,
+  queueStatus,
   onSelectSnapshot,
   onCapture,
   onCancelPending,
@@ -3401,10 +3599,15 @@ function SnapshotsPage({
   onChangeSnapshotFade,
   snapshotCommitDelayMs,
   onChangeSnapshotCommitDelay,
+  snapshotClockSource,
+  onChangeSnapshotClockSource,
+  snapshotCycleBars,
+  onChangeSnapshotCycleBars,
 }: {
   snapshots: SnapshotsState;
   activeSnapshotId: string | null;
   pendingSnapshotId: string | null;
+  queueStatus: SnapshotQueueStatus | null;
   onSelectSnapshot: (snapshotId: string) => void;
   onCapture: (snapshotId: string) => void;
   onCancelPending: () => void;
@@ -3417,6 +3620,10 @@ function SnapshotsPage({
   onChangeSnapshotFade: (ms: number) => void;
   snapshotCommitDelayMs: number;
   onChangeSnapshotCommitDelay: (ms: number) => void;
+  snapshotClockSource: SnapshotClockSource;
+  onChangeSnapshotClockSource: (s: SnapshotClockSource) => void;
+  snapshotCycleBars: number;
+  onChangeSnapshotCycleBars: (bars: number) => void;
 }) {
   const activeSlot = activeSnapshotId
     ? findSnapshotSlot(activeSnapshotId, snapshots)
@@ -3424,6 +3631,7 @@ function SnapshotsPage({
   const pendingSlot = pendingSnapshotId
     ? findSnapshotSlot(pendingSnapshotId, snapshots)
     : null;
+  const queueLength = queueStatus?.queueLength ?? (pendingSnapshotId ? 1 : 0);
 
   const activeBank =
     snapshots.banks.find((b) => b.id === snapshots.activeBankId) ??
@@ -3476,6 +3684,28 @@ function SnapshotsPage({
               }
               title="Commit delay in ms (fallback when not synced to clock)"
             />
+            <span style={styles.muted}>Cycle bars</span>
+            <input
+              style={styles.inputNarrow}
+              value={snapshotCycleBars}
+              onChange={(e) =>
+                onChangeSnapshotCycleBars(
+                  Math.min(Math.max(Number(e.target.value) || 1, 1), 32)
+                )
+              }
+              title="Commit applies at the next cycle boundary (1–32 bars)."
+            />
+            <span style={styles.muted}>Clock</span>
+            <select
+              style={styles.select}
+              value={snapshotClockSource}
+              onChange={(e) =>
+                onChangeSnapshotClockSource(e.target.value as SnapshotClockSource)
+              }
+            >
+              <option value="oxi">OXI (incoming MIDI clock)</option>
+              <option value="internal">Internal</option>
+            </select>
             <select
               style={styles.select}
               value={snapshotMode}
@@ -3497,6 +3727,12 @@ function SnapshotsPage({
               <option value="bar1">1 Bar Quant</option>
               <option value="bar4">4 Bar Quant</option>
             </select>
+            {queueLength > 0 ? (
+              <span style={styles.muted}>
+                Queue: {queueLength}
+                {queueStatus?.executing ? " (sending)" : queueStatus?.armed ? " (armed)" : ""}
+              </span>
+            ) : null}
             <button
               style={styles.btnPrimary}
               onClick={() => activeSnapshotId && onSelectSnapshot(activeSnapshotId)}
@@ -3510,12 +3746,12 @@ function SnapshotsPage({
             >
               Capture
             </button>
-            {pendingSnapshotId ? (
+            {queueLength > 0 ? (
               <button
                 style={styles.btnSecondary}
                 onClick={onCancelPending}
               >
-                Cancel Pending
+                Flush Queue
               </button>
             ) : null}
           </div>

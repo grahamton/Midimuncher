@@ -21,7 +21,7 @@ This repo will grow quickly. Keep the core loops fast and predictable.
 - Type safety: prefer `tsc --noEmit` as the default lint gate; avoid `any`.
 - IPC contracts: keep shared types in `apps/desktop/shared`; validate at boundaries.
 - Feature flags: gate Windows MIDI Services, sequencer host, or experimental schedulers.
-- Snapshots/chains: keep quantize/fade math central; avoid duplicating tempo logic.
+- Snapshots/chains: keep quantize/commit/burst logic in the main process scheduler; avoid renderer timers and duplicated tempo math.
 
 ## When adding features
 - Add a smoke test if the code touches MIDI I/O or persistence.
