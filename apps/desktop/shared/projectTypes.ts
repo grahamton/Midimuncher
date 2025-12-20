@@ -22,6 +22,7 @@ export type AppView =
   | "monitor"
   | "help"
   | "snapshots"
+  | "stage"
   | "chains"
   | "settings"
   | "surfaces";
@@ -175,6 +176,7 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
     view === "monitor" ||
     view === "help" ||
     view === "snapshots" ||
+    view === "stage" ||
     view === "chains" ||
     view === "settings" ||
     view === "surfaces"

@@ -41,6 +41,8 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
+import { useMidiBridgeClock, type BridgeClock } from "../services/midiBridge";
+import { StagePage } from "./StagePage";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
 import { quantizeToMs } from "./lib/tempo";
@@ -49,8 +51,6 @@ const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
 const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
-const CLOCK_PPQN = 24;
-
 const styles = {
   window: {
     height: "100vh",
@@ -417,6 +417,8 @@ export function App() {
   const [selectedOut, setSelectedOut] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceConfig[]>([]);
+  const { clock, relinkClock } = useMidiBridgeClock(midiApi);
+  const clockBpm = clock.bpm;
   const [log, setLog] = useState<MidiEvent[]>([]);
   const [ccValue, setCcValue] = useState(64);
   const [note, setNote] = useState(60);
@@ -442,21 +444,17 @@ export function App() {
   const snapshotTimerRef = useRef<number | null>(null);
   const [tempoBpm, setTempoBpm] = useState(defaults.tempoBpm);
   const [useClockSync, setUseClockSync] = useState(defaults.useClockSync);
-  const [clockBpm, setClockBpm] = useState<number | null>(null);
   const [followClockStart, setFollowClockStart] = useState(defaults.followClockStart);
   const [chainSteps, setChainSteps] = useState<ChainStep[]>(defaults.chainSteps);
   const [chainPlaying, setChainPlaying] = useState(false);
   const chainTimerRef = useRef<number | null>(null);
   const [chainIndex, setChainIndex] = useState<number>(0);
-  const lastClockTickRef = useRef<number | null>(null);
-  const clockBpmRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSentStateJsonRef = useRef<string | null>(null);
-  const [clockHeartbeat, setClockHeartbeat] = useState(0);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
   const selectedDeviceIdRef = useRef<string | null>(null);
@@ -600,22 +598,6 @@ export function App() {
       }
 
       setLog((current) => [evt, ...current].slice(0, LOG_LIMIT));
-
-      if (evt.msg.t === "clock") {
-        const now = evt.ts ?? Date.now();
-        setClockHeartbeat((v) => (v + 1) % 1000);
-        const last = lastClockTickRef.current;
-        if (last) {
-          const dtMs = now - last;
-          if (dtMs > 0) {
-            const bpm = 60000 / (dtMs * CLOCK_PPQN);
-            const smoothed = clockBpmRef.current ? clockBpmRef.current * 0.7 + bpm * 0.3 : bpm;
-            clockBpmRef.current = smoothed;
-            setClockBpm(smoothed);
-          }
-        }
-        lastClockTickRef.current = now;
-      }
 
       if (evt.msg.t === "start" && followClockStart) {
         startChain();
@@ -834,17 +816,7 @@ export function App() {
     [log]
   );
   const logCapReached = activity.length >= LOG_LIMIT;
-  const clockStale = useMemo(
-    () => useClockSync && (!lastClockTickRef.current || Date.now() - lastClockTickRef.current > 2000),
-    [useClockSync, clockHeartbeat]
-  );
-
-  function relinkClock() {
-    lastClockTickRef.current = null;
-    clockBpmRef.current = null;
-    setClockBpm(null);
-    setClockHeartbeat((v) => (v + 1) % 1000);
-  }
+  const clockStale = useMemo(() => useClockSync && clock.stale, [clock.stale, useClockSync]);
 
   async function refreshPorts() {
     if (!midiApi) return;
@@ -1432,6 +1404,7 @@ export function App() {
           <MainContentArea
             route={route}
             ports={ports}
+            clock={clock}
             devices={devices}
             selectedIn={selectedIn}
             selectedOut={selectedOut}
@@ -1459,14 +1432,14 @@ export function App() {
             onSendCc={sendCc}
             onQuickTest={(portId, ch) => sendQuickNote(portId, ch, note)}
             onQuickCc={(portId, ch, ccNum, val) => sendQuickCc(portId, ch, ccNum, val)}
-          onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
-          onSendSnapshot={sendSnapshotNow}
-          onAddDeviceRoutes={addDeviceRoutes}
-          updateControl={updateControl}
-          onEmitControl={emitControl}
-          snapshots={snapshots}
-          activeSnapshot={activeSnapshot}
-          onSelectSnapshot={triggerSnapshot}
+            onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
+            onSendSnapshot={sendSnapshotNow}
+            onAddDeviceRoutes={addDeviceRoutes}
+            updateControl={updateControl}
+            onEmitControl={emitControl}
+            snapshots={snapshots}
+            activeSnapshot={activeSnapshot}
+            onSelectSnapshot={triggerSnapshot}
             pendingSnapshot={pendingSnapshot}
             snapshotQuantize={snapshotQuantize}
             snapshotMode={snapshotMode}
@@ -1777,6 +1750,7 @@ function LeftNavRail({
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
     { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
+    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "chains", label: "Chains", icon: <LinkIcon size={18} /> },
     { id: "monitor", label: "Monitor", icon: <Activity size={18} /> },
     { id: "settings", label: "Settings", icon: <Settings size={18} /> }
@@ -1825,6 +1799,7 @@ function LeftNavRail({
 function MainContentArea(props: {
   route: NavRoute;
   ports: MidiPorts;
+  clock: BridgeClock;
   devices: DeviceConfig[];
   selectedIn: string | null;
   selectedOut: string | null;
@@ -1942,6 +1917,15 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
+        />
+      );
+    case "stage":
+      return (
+        <StagePage
+          clock={rest.clock}
+          snapshots={rest.snapshots}
+          activeSnapshot={rest.activeSnapshot}
+          onSelectSnapshot={rest.onSelectSnapshot}
         />
       );
     case "chains":
