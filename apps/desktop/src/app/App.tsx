@@ -587,9 +587,18 @@ export function App() {
         setSnapshotQuantize(
           state.snapshotQuantize ?? defaults.snapshotQuantize
         );
-        setSnapshotMode(state.snapshotMode ?? defaults.snapshotMode);
-        setSnapshotFadeMs(state.snapshotFadeMs ?? defaults.snapshotFadeMs);
-        setSnapshotsState(state.snapshots ?? defaults.snapshots);
+        const nextSnapshots = state.snapshots ?? defaults.snapshots;
+        const nextMode: SnapshotMode =
+          state.snapshotMode ?? nextSnapshots.strategy ?? defaults.snapshotMode;
+        const nextFadeMs =
+          state.snapshotFadeMs ?? nextSnapshots.fadeMs ?? defaults.snapshotFadeMs;
+        setSnapshotMode(nextMode);
+        setSnapshotFadeMs(nextFadeMs);
+        setSnapshotsState({
+          ...nextSnapshots,
+          strategy: nextMode,
+          fadeMs: nextFadeMs,
+        });
         setChainSteps(
           Array.isArray(state.chainSteps) && state.chainSteps.length
             ? state.chainSteps
@@ -788,8 +797,8 @@ export function App() {
       useClockSync,
       followClockStart,
       snapshotQuantize,
-      snapshotMode,
-      snapshotFadeMs,
+      snapshotMode: snapshotsState.strategy,
+      snapshotFadeMs: snapshotsState.fadeMs,
       snapshots: snapshotsState,
       chainSteps,
       devices,
@@ -1425,9 +1434,9 @@ export function App() {
     if (!found?.slot.snapshot) return;
     const payload: SnapshotRecallPayload = {
       snapshot: found.slot.snapshot,
-      strategy: snapshotMode,
-      fadeMs: snapshotFadeMs,
-      commitDelayMs: 0,
+      strategy: snapshotsState.strategy,
+      fadeMs: snapshotsState.fadeMs,
+      commitDelayMs: snapshotsState.commitDelayMs,
       burst: snapshotsState.burst,
     };
     await midiApi.recallSnapshot(payload);
@@ -1563,8 +1572,8 @@ export function App() {
       useClockSync,
       followClockStart,
       snapshotQuantize,
-      snapshotMode,
-      snapshotFadeMs,
+      snapshotMode: snapshotsState.strategy,
+      snapshotFadeMs: snapshotsState.fadeMs,
       chainSteps,
       snapshots: snapshotsState,
       devices,
@@ -1720,11 +1729,25 @@ export function App() {
               setSnapshotsState((current) => ({ ...current, activeBankId: bankId }))
             }
             snapshotQuantize={snapshotQuantize}
-            snapshotMode={snapshotMode}
+            snapshotMode={snapshotsState.strategy}
             onChangeSnapshotQuantize={setSnapshotQuantize}
-            onChangeSnapshotMode={setSnapshotMode}
-            snapshotFadeMs={snapshotFadeMs}
-            onChangeSnapshotFade={(ms) => setSnapshotFadeMs(Math.max(0, ms))}
+            onChangeSnapshotMode={(mode) => {
+              setSnapshotMode(mode);
+              setSnapshotsState((current) => ({ ...current, strategy: mode }));
+            }}
+            snapshotFadeMs={snapshotsState.fadeMs}
+            onChangeSnapshotFade={(ms) => {
+              const next = Math.max(0, ms);
+              setSnapshotFadeMs(next);
+              setSnapshotsState((current) => ({ ...current, fadeMs: next }));
+            }}
+            snapshotCommitDelayMs={snapshotsState.commitDelayMs}
+            onChangeSnapshotCommitDelay={(ms) =>
+              setSnapshotsState((current) => ({
+                ...current,
+                commitDelayMs: Math.max(0, Math.round(ms)),
+              }))
+            }
             chainSteps={chainSteps}
             chainPlaying={chainPlaying}
             chainIndex={chainIndex}
@@ -2163,6 +2186,8 @@ function MainContentArea(props: {
   onChangeSnapshotMode: (m: SnapshotMode) => void;
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
+  snapshotCommitDelayMs: number;
+  onChangeSnapshotCommitDelay: (ms: number) => void;
   chainSteps: ChainStep[];
   chainPlaying: boolean;
   chainIndex: number;
@@ -2272,6 +2297,8 @@ function RouteOutlet({
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
+          snapshotCommitDelayMs={rest.snapshotCommitDelayMs}
+          onChangeSnapshotCommitDelay={rest.onChangeSnapshotCommitDelay}
         />
       );
     case "stage":
@@ -2353,6 +2380,8 @@ function RouteOutlet({
           onChangeSnapshotMode={rest.onChangeSnapshotMode}
           snapshotFadeMs={rest.snapshotFadeMs}
           onChangeSnapshotFade={rest.onChangeSnapshotFade}
+          snapshotCommitDelayMs={rest.snapshotCommitDelayMs}
+          onChangeSnapshotCommitDelay={rest.onChangeSnapshotCommitDelay}
         />
       );
   }
@@ -3370,6 +3399,8 @@ function SnapshotsPage({
   onChangeSnapshotMode,
   snapshotFadeMs,
   onChangeSnapshotFade,
+  snapshotCommitDelayMs,
+  onChangeSnapshotCommitDelay,
 }: {
   snapshots: SnapshotsState;
   activeSnapshotId: string | null;
@@ -3384,6 +3415,8 @@ function SnapshotsPage({
   onChangeSnapshotMode: (m: SnapshotMode) => void;
   snapshotFadeMs: number;
   onChangeSnapshotFade: (ms: number) => void;
+  snapshotCommitDelayMs: number;
+  onChangeSnapshotCommitDelay: (ms: number) => void;
 }) {
   const activeSlot = activeSnapshotId
     ? findSnapshotSlot(activeSnapshotId, snapshots)
@@ -3433,6 +3466,15 @@ function SnapshotsPage({
               onChange={(e) =>
                 onChangeSnapshotFade(Number(e.target.value) || 0)
               }
+            />
+            <span style={styles.muted}>Commit</span>
+            <input
+              style={styles.inputNarrow}
+              value={snapshotCommitDelayMs}
+              onChange={(e) =>
+                onChangeSnapshotCommitDelay(Number(e.target.value) || 0)
+              }
+              title="Commit delay in ms (fallback when not synced to clock)"
             />
             <select
               style={styles.select}

@@ -8,7 +8,8 @@ describe("coerceProjectDoc", () => {
     const result = coerceProjectDoc({ schemaVersion: 2, updatedAt: 123, state: {} });
     assert.equal(result.state.snapshots.burst.intervalMs, 6);
     assert.equal(result.state.snapshots.burst.maxPerInterval, 1);
-    assert.equal(result.state.snapshots.banks.length > 0, true);
+    assert.equal(result.state.snapshots.banks.length, 20);
+    assert.equal(result.state.snapshots.banks[0]?.slots.length, 20);
   });
 
   it("falls back to defaults for invalid payloads", () => {

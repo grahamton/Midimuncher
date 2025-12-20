@@ -17,7 +17,7 @@
     "build:main": "tsup electron/main.ts electron/preload.ts electron/midiBridge.ts electron/sequencerHost.ts --format cjs --sourcemap --out-dir dist-electron",
     "build:renderer": "vite build",
     "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json",
-    "test": "tsx --tsconfig tsconfig.test.json --test tests/**/*.test.ts",
+    "test": "node scripts/run-tests.cjs",
     "smoke:midi": "tsx scripts/midi-smoke.ts",
     "smoke:winrt": "tsx scripts/winrt-smoke.ts",
     "smoke:persist": "tsx scripts/persistence-smoke.ts",

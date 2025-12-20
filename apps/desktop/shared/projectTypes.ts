@@ -157,41 +157,49 @@ export type ProjectDocV2 = {
 export type ProjectState = ProjectStateV2;
 export type ProjectDoc = ProjectDocV2;
 
-function defaultSnapshotSlots(): SnapshotSlotState[] {
-  const bankANames = [
-    "INTRO",
-    "VERSE",
-    "CHORUS 1",
-    "BUILD",
-    "DROP!!",
-    "OUTRO",
-    "SOLO",
-    "BREAK",
-  ];
-  return Array.from({ length: 8 }, (_v, idx) => ({
+const DEFAULT_SNAPSHOT_BANK_COUNT = 20;
+const DEFAULT_SNAPSHOT_SLOTS_PER_BANK = 20;
+const BANK_A_DEFAULT_NAMES = [
+  "INTRO",
+  "VERSE",
+  "CHORUS 1",
+  "BUILD",
+  "DROP!!",
+  "OUTRO",
+  "SOLO",
+  "BREAK",
+];
+
+function snapshotBankLabel(index: number) {
+  const letter = String.fromCharCode("A".charCodeAt(0) + index);
+  return `Bank ${letter}`;
+}
+
+function defaultSnapshotSlots(bankIndex: number): SnapshotSlotState[] {
+  return Array.from({ length: DEFAULT_SNAPSHOT_SLOTS_PER_BANK }, (_v, idx) => ({
     id: `slot-${idx + 1}`,
-    name: bankANames[idx] ?? `Slot ${idx + 1}`,
+    name:
+      bankIndex === 0
+        ? (BANK_A_DEFAULT_NAMES[idx] ?? `Slot ${idx + 1}`)
+        : `Slot ${idx + 1}`,
     lastCapturedAt: null,
     snapshot: null,
     notes: "",
   }));
 }
 
+function defaultSnapshotBank(index: number): SnapshotBankState {
+  return {
+    id: `bank-${index + 1}`,
+    name: snapshotBankLabel(index),
+    slots: defaultSnapshotSlots(index),
+  };
+}
+
 function defaultSnapshotBanks(): SnapshotBankState[] {
-  return [
-    { id: "bank-1", name: "Bank A", slots: defaultSnapshotSlots() },
-    {
-      id: "bank-2",
-      name: "Bank B",
-      slots: Array.from({ length: 8 }, (_v, idx) => ({
-        id: `slot-${idx + 1}`,
-        name: `Slot ${idx + 1}`,
-        lastCapturedAt: null,
-        snapshot: null,
-        notes: "",
-      })),
-    },
-  ];
+  return Array.from({ length: DEFAULT_SNAPSHOT_BANK_COUNT }, (_v, idx) =>
+    defaultSnapshotBank(idx)
+  );
 }
 
 export function defaultSnapshotsState(): SnapshotsState {
@@ -526,8 +534,7 @@ function coerceSequencerState(rawState: unknown): SequencerProjectState {
 
 function coerceSnapshotSlot(
   raw: unknown,
-  idx: number,
-  fallbackName: string
+  fallback: SnapshotSlotState
 ): SnapshotSlotState {
   const rec = (
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
@@ -541,27 +548,35 @@ function coerceSnapshotSlot(
     rec.snapshot && typeof rec.snapshot === "object"
       ? (rec.snapshot as SnapshotState)
       : null;
-  const fallbackSlot: SnapshotSlotState = {
-    id: typeof rec.id === "string" ? rec.id : `slot-${idx + 1}`,
-    name: typeof rec.name === "string" ? rec.name : fallbackName,
+  return {
+    id: typeof rec.id === "string" ? rec.id : fallback.id,
+    name: typeof rec.name === "string" ? rec.name : fallback.name,
     lastCapturedAt: capturedAt,
     snapshot,
-    notes: typeof rec.notes === "string" ? rec.notes : "",
+    notes: typeof rec.notes === "string" ? rec.notes : fallback.notes,
   };
-  return fallbackSlot;
 }
 
-function coerceSnapshotBank(raw: unknown, idx: number): SnapshotBankState {
+function coerceSnapshotBank(raw: unknown, fallback: SnapshotBankState): SnapshotBankState {
   const rec = (
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
   ) as Record<string, unknown>;
-  const slots = asArray(rec.slots).map((slot, slotIdx) =>
-    coerceSnapshotSlot(slot, slotIdx, `Slot ${slotIdx + 1}`)
-  );
+  const rawSlots = asArray(rec.slots);
+  const slots: SnapshotSlotState[] = [];
+  for (let i = 0; i < fallback.slots.length; i++) {
+    const fallbackSlot = fallback.slots[i] ?? {
+      id: `slot-${i + 1}`,
+      name: `Slot ${i + 1}`,
+      lastCapturedAt: null,
+      snapshot: null,
+      notes: "",
+    };
+    slots.push(coerceSnapshotSlot(rawSlots[i], fallbackSlot));
+  }
   return {
-    id: typeof rec.id === "string" ? rec.id : `bank-${idx + 1}`,
-    name: typeof rec.name === "string" ? rec.name : `Bank ${idx + 1}`,
-    slots: slots.length > 0 ? slots : defaultSnapshotSlots(),
+    id: typeof rec.id === "string" ? rec.id : fallback.id,
+    name: typeof rec.name === "string" ? rec.name : fallback.name,
+    slots,
   };
 }
 
@@ -570,13 +585,17 @@ function coerceSnapshotsState(raw: unknown): SnapshotsState {
   const rec = (
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
   ) as Record<string, unknown>;
-  const banks = asArray(rec.banks).map((b, idx) => coerceSnapshotBank(b, idx));
+  const rawBanks = asArray(rec.banks);
+  const banks = defaults.banks.map((fallbackBank, idx) => {
+    const byId = rawBanks.find((b) => (b as any)?.id === fallbackBank.id);
+    const candidate = byId ?? rawBanks[idx] ?? null;
+    return coerceSnapshotBank(candidate, fallbackBank);
+  });
 
   const activeBankId =
     typeof rec.activeBankId === "string"
-      ? rec.activeBankId
-      : banks.find((b) => b.id === defaults.activeBankId)?.id ??
-        defaults.activeBankId;
+      ? (banks.some((b) => b.id === rec.activeBankId) ? rec.activeBankId : defaults.activeBankId)
+      : defaults.activeBankId;
 
   const strategy: SnapshotRecallStrategy =
     rec.strategy === "commit" ? "commit" : "jump";
@@ -607,7 +626,7 @@ function coerceSnapshotsState(raw: unknown): SnapshotsState {
         ? rec.captureNotes
         : defaults.captureNotes,
     burst,
-    banks: banks.length > 0 ? banks : defaults.banks,
+    banks,
   };
 }
 
