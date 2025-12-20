@@ -5,8 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node"],
-    "allowImportingTsExtensions": false,
-    "baseUrl": "."
+    "allowImportingTsExtensions": false
   },
   "include": ["src", "shared", "electron", "tests"]
 }
