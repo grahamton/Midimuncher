@@ -1,5 +1,6 @@
 import type { ControlElement } from "@midi-playground/core";
 import type { RouteConfig } from "./ipcTypes";
+import { buildRigControls, buildRigDevices, buildRigRoutes } from "../src/app/config/rig";
 
 export type SnapshotQuantize = "immediate" | "bar1" | "bar4";
 export type SnapshotMode = "jump" | "commit";
@@ -68,12 +69,16 @@ export type ProjectDocV1 = {
 };
 
 export function defaultProjectState(): ProjectStateV1 {
+  const rigDevices = buildRigDevices();
+  const rigRoutes = buildRigRoutes();
+  const rigControls = buildRigControls();
+
   return {
     backendId: null,
     selectedIn: null,
     selectedOut: null,
     activeView: "snapshots",
-    selectedDeviceId: null,
+    selectedDeviceId: rigDevices[0]?.id ?? null,
     tempoBpm: 124,
     useClockSync: false,
     followClockStart: false,
@@ -86,10 +91,10 @@ export function defaultProjectState(): ProjectStateV1 {
       { snapshot: "CHORUS 1", bars: 8 },
       { snapshot: "DROP!!", bars: 8 }
     ],
-    devices: [],
-    routes: [],
-    controls: [],
-    selectedControlId: null,
+    devices: rigDevices,
+    routes: rigRoutes,
+    controls: rigControls,
+    selectedControlId: rigControls[0]?.id ?? null,
     ui: {
       routeBuilder: {
         forceChannelEnabled: true,

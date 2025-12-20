@@ -9,7 +9,7 @@ describe("coerceProjectDoc", () => {
     const result = coerceProjectDoc({ schemaVersion: 99, state: null });
 
     assert.equal(result.state.activeView, fallback.state.activeView);
-    assert.deepStrictEqual(result.state.devices, []);
+    assert.deepStrictEqual(result.state.devices, fallback.state.devices);
   });
 
   it("sanitizes nested state fields", () => {

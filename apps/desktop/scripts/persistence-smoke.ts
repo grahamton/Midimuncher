@@ -24,7 +24,7 @@ async function main() {
 
   await storage.save(doc);
   const loaded = await storage.load(() => defaultProjectDoc());
-  assert.equal((loaded as any).schemaVersion, 1);
+  assert.equal((loaded as any).schemaVersion, 2);
   assert.equal((loaded as any).state?.devices?.[0]?.name, "OXI One");
 
   const targetPath = storage.filePath();

@@ -22,7 +22,7 @@ import {
   Trash2,
   Zap
 } from "lucide-react";
-import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import { getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
@@ -41,6 +41,7 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
+import { buildRigControls, rigRouteLabels } from "./config/rig";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
 import { quantizeToMs } from "./lib/tempo";
@@ -400,12 +401,7 @@ const styles = {
 };
 
 function defaultControls(): ControlElement[] {
-  return [
-    { id: "knob-1", type: "knob", label: "Knob 1", value: 0, slots: defaultSlots() },
-    { id: "knob-2", type: "knob", label: "Knob 2", value: 0, slots: defaultSlots() },
-    { id: "fader-1", type: "fader", label: "Fader 1", value: 0, slots: defaultSlots() },
-    { id: "button-1", type: "button", label: "Button 1", value: 0, slots: defaultSlots() }
-  ];
+  return buildRigControls();
 }
 
 export function App() {
@@ -413,15 +409,15 @@ export function App() {
   const midiApi = typeof window !== "undefined" ? window.midi : undefined;
   const [ports, setPorts] = useState<MidiPorts>({ inputs: [], outputs: [] });
   const [backends, setBackends] = useState<MidiBackendInfo[]>([]);
-  const [selectedIn, setSelectedIn] = useState<string | null>(null);
-  const [selectedOut, setSelectedOut] = useState<string | null>(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [devices, setDevices] = useState<DeviceConfig[]>([]);
+  const [selectedIn, setSelectedIn] = useState<string | null>(defaults.selectedIn);
+  const [selectedOut, setSelectedOut] = useState<string | null>(defaults.selectedOut);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(defaults.selectedDeviceId);
+  const [devices, setDevices] = useState<DeviceConfig[]>(() => defaults.devices);
   const [log, setLog] = useState<MidiEvent[]>([]);
   const [ccValue, setCcValue] = useState(64);
   const [note, setNote] = useState(60);
   const [loadingPorts, setLoadingPorts] = useState(false);
-  const [routes, setRoutes] = useState<RouteConfig[]>([]);
+  const [routes, setRoutes] = useState<RouteConfig[]>(() => defaults.routes);
   const [forceChannelEnabled, setForceChannelEnabled] = useState(true);
   const [routeChannel, setRouteChannel] = useState(1);
   const [allowNotes, setAllowNotes] = useState(true);
@@ -450,8 +446,10 @@ export function App() {
   const [chainIndex, setChainIndex] = useState<number>(0);
   const lastClockTickRef = useRef<number | null>(null);
   const clockBpmRef = useRef<number | null>(null);
-  const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
-  const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
+  const [controls, setControls] = useState<ControlElement[]>(() => defaults.controls);
+  const [selectedControlId, setSelectedControlId] = useState<string>(
+    defaults.selectedControlId ?? defaults.controls[0]?.id ?? "knob-monologue"
+  );
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -488,14 +486,24 @@ export function App() {
 
       const state = loaded?.state;
       if (state) {
-        setSelectedIn(state.selectedIn);
-        setSelectedOut(state.selectedOut);
+        const nextDevices =
+          Array.isArray(state.devices) && state.devices.length > 0
+            ? state.devices.slice(0, MAX_DEVICES)
+            : defaults.devices;
+        const nextRoutes = Array.isArray(state.routes) && state.routes.length > 0 ? state.routes : defaults.routes;
+        const nextControls =
+          Array.isArray(state.controls) && state.controls.length > 0 ? state.controls : defaultControls();
+
+        setSelectedIn(state.selectedIn ?? defaults.selectedIn);
+        setSelectedOut(state.selectedOut ?? defaults.selectedOut);
         setActiveView(state.activeView ?? "setup");
-        setSelectedDeviceId(state.selectedDeviceId);
-        setDevices(Array.isArray(state.devices) ? state.devices.slice(0, MAX_DEVICES) : []);
-        setRoutes(Array.isArray(state.routes) ? state.routes : []);
-        setControls(Array.isArray(state.controls) && state.controls.length > 0 ? state.controls : defaultControls());
-        setSelectedControlId(state.selectedControlId ?? "knob-1");
+        setSelectedDeviceId(state.selectedDeviceId ?? nextDevices[0]?.id ?? defaults.selectedDeviceId ?? null);
+        setDevices(nextDevices);
+        setRoutes(nextRoutes);
+        setControls(nextControls);
+        setSelectedControlId(
+          state.selectedControlId ?? nextControls[0]?.id ?? defaults.selectedControlId ?? "knob-monologue"
+        );
         setForceChannelEnabled(state.ui?.routeBuilder?.forceChannelEnabled ?? true);
         setRouteChannel(state.ui?.routeBuilder?.routeChannel ?? 1);
         setAllowNotes(state.ui?.routeBuilder?.allowNotes ?? true);
@@ -529,8 +537,11 @@ export function App() {
       const validOut =
         state?.selectedOut && available.outputs.some((p) => p.id === state.selectedOut) ? state.selectedOut : null;
 
-      setSelectedIn(validIn ?? available.inputs[0]?.id ?? null);
-      setSelectedOut(validOut ?? available.outputs[0]?.id ?? null);
+      const defaultIn = validIn ?? available.inputs[0]?.id ?? null;
+      const defaultOut = validOut ?? available.outputs[0]?.id ?? null;
+
+      setSelectedIn(defaultIn);
+      setSelectedOut(defaultOut);
 
       setDevices((current) =>
         current.slice(0, MAX_DEVICES).map((d) => ({
@@ -541,9 +552,15 @@ export function App() {
       );
 
       setRoutes((current) =>
-        current.filter(
-          (r) => available.inputs.some((p) => p.id === r.fromId) && available.outputs.some((p) => p.id === r.toId)
-        )
+        current.map((route) => {
+          const hasIn = route.fromId && available.inputs.some((p) => p.id === route.fromId);
+          const hasOut = route.toId && available.outputs.some((p) => p.id === route.toId);
+          return {
+            ...route,
+            fromId: hasIn ? route.fromId : defaultIn ?? route.fromId,
+            toId: hasOut ? route.toId : defaultOut ?? route.toId
+          };
+        })
       );
 
       setProjectHydrated(true);
@@ -649,7 +666,8 @@ export function App() {
 
   useEffect(() => {
     if (midiApi) {
-      void midiApi.setRoutes(routes);
+      const activeRoutes = routes.filter((r) => r.fromId && r.toId);
+      void midiApi.setRoutes(activeRoutes);
     }
   }, [routes, midiApi]);
 
@@ -886,9 +904,9 @@ export function App() {
       backendId: selectedBackendId,
       selectedIn,
       selectedOut,
-      selectedDeviceId: null,
+      selectedDeviceId: base.selectedDeviceId,
       controls: defaultControls(),
-      selectedControlId: "knob-1"
+      selectedControlId: base.selectedControlId ?? base.controls[0]?.id ?? "knob-monologue"
     };
 
     setActiveView(state.activeView);
@@ -896,7 +914,7 @@ export function App() {
     setDevices(state.devices);
     setRoutes(state.routes);
     setControls(state.controls);
-    setSelectedControlId(state.selectedControlId ?? "knob-1");
+    setSelectedControlId(state.selectedControlId ?? base.selectedControlId ?? "knob-monologue");
     setForceChannelEnabled(state.ui.routeBuilder.forceChannelEnabled);
     setRouteChannel(state.ui.routeBuilder.routeChannel);
     setAllowNotes(state.ui.routeBuilder.allowNotes);
@@ -1391,6 +1409,10 @@ export function App() {
 
   const route = activeView;
   const monitorRows = activity.slice(0, 12);
+  const rigSummary = useMemo(() => {
+    const labels = rigRouteLabels(devices);
+    return labels.length ? labels.join(" • ") : "Rig not set";
+  }, [devices]);
 
   return (
     <div style={styles.window}>
@@ -1426,6 +1448,7 @@ export function App() {
               ? formatPortLabel(ports.outputs.find((p) => p.id === selectedOut)?.name ?? selectedOut)
               : "No output"
           }
+          rigSummary={rigSummary}
         />
         <BodySplitPane>
           <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} onPanic={panicAll} />
@@ -1521,7 +1544,8 @@ function TopStatusBar({
   onToggleFollowClockStart,
   backendLabel,
   inputLabel,
-  outputLabel
+  outputLabel,
+  rigSummary
 }: {
   saveLabel: string;
   lastSavedAt: number | null;
@@ -1542,6 +1566,7 @@ function TopStatusBar({
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
+  rigSummary: string;
 }) {
   return (
     <>
@@ -1566,6 +1591,7 @@ function TopStatusBar({
         backendLabel={backendLabel}
         inputLabel={inputLabel}
         outputLabel={outputLabel}
+        rigLabel={rigSummary}
         clockLabel={
           useClockSync
             ? clockStale
@@ -1704,17 +1730,22 @@ function StatusStrip({
   backendLabel,
   inputLabel,
   outputLabel,
-  clockLabel
+  clockLabel,
+  rigLabel
 }: {
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
   clockLabel: string;
+  rigLabel: string;
 }) {
   return (
     <div style={{ ...styles.bottomBar, backgroundColor: "#0f0f0f", borderTop: "1px solid #1e1e1e" }}>
       <div style={styles.row}>
         <span style={styles.muted}>Backend:</span> <span style={styles.valueText}>{backendLabel}</span>
+      </div>
+      <div style={styles.row}>
+        <span style={styles.muted}>Rig:</span> <span style={styles.valueText}>{rigLabel}</span>
       </div>
       <div style={styles.row}>
         <span style={styles.muted}>In:</span> <span style={styles.valueText}>{inputLabel}</span>
