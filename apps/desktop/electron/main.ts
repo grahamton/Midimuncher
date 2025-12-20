@@ -79,7 +79,14 @@ app.whenReady().then(() => {
     return midiBridge.openOut(id);
   });
   ipcMain.handle("midi:send", (_event, payload: MidiSendPayload) => {
-    sessionLogger?.log("ipc", { name: "midi:send", portId: payload?.portId, msg: payload?.msg?.t ?? null });
+    const msgType = (payload as any)?.msg?.t ?? null;
+    if (msgType !== "clock" && msgType !== "activeSensing") {
+      sessionLogger?.log("ipc", {
+        name: "midi:send",
+        portId: payload?.portId,
+        msg: msgType,
+      });
+    }
     return midiBridge.send(payload);
   });
   ipcMain.handle("midi:setRoutes", (_event, routes: RouteConfig[]) => {

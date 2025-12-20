@@ -6,6 +6,7 @@ import {
   type SequencerSend,
   type SequencerTarget
 } from "@midi-playground/core";
+import { performance } from "node:perf_hooks";
 import type {
   DeviceConfig,
   SequencerApplyPayload,
@@ -19,6 +20,7 @@ export class SequencerHost {
   private devices: DeviceConfig[] = [];
   private chains: SequencerChain[] = [];
   private clockTimer: NodeJS.Timeout | null = null;
+  private nextTickAtMs: number | null = null;
   private transportBpm = 120;
   private running = false;
 
@@ -50,14 +52,16 @@ export class SequencerHost {
     if (intervalMs <= 0) return;
     this.sendTransportMsg("start");
     this.sendInitialEvents();
-    this.clockTimer = setInterval(() => this.tick(), intervalMs);
+    this.nextTickAtMs = performance.now() + intervalMs;
+    this.scheduleNextTick();
   }
 
   stop(sendStop = true): void {
     if (this.clockTimer) {
-      clearInterval(this.clockTimer);
+      clearTimeout(this.clockTimer);
       this.clockTimer = null;
     }
+    this.nextTickAtMs = null;
     if (sendStop && this.running) {
       this.sendTransportMsg("stop");
     }
@@ -80,6 +84,31 @@ export class SequencerHost {
     for (const send of sends) {
       this.emit(send);
     }
+  }
+
+  private scheduleNextTick(): void {
+    if (!this.running) return;
+    const intervalMs = this.clockIntervalMs();
+    if (intervalMs <= 0) return;
+
+    const now = performance.now();
+    if (this.nextTickAtMs == null) {
+      this.nextTickAtMs = now + intervalMs;
+    }
+
+    const delay = Math.max(0, Math.round(this.nextTickAtMs - now));
+    this.clockTimer = setTimeout(() => {
+      if (!this.running) return;
+
+      const firedAt = performance.now();
+      this.tick();
+
+      const nextInterval = this.clockIntervalMs();
+      const step = nextInterval > 0 ? nextInterval : intervalMs;
+      const next = (this.nextTickAtMs ?? firedAt) + step;
+      this.nextTickAtMs = next < firedAt ? firedAt + step : next;
+      this.scheduleNextTick();
+    }, delay);
   }
 
   private emit(send: SequencerSend) {
