@@ -412,6 +412,7 @@ export function App() {
   const defaults = defaultProjectState();
   const midiApi = typeof window !== "undefined" ? window.midi : undefined;
   const [ports, setPorts] = useState<MidiPorts>({ inputs: [], outputs: [] });
+  const portsRef = useRef<MidiPorts>({ inputs: [], outputs: [] });
   const [backends, setBackends] = useState<MidiBackendInfo[]>([]);
   const [selectedIn, setSelectedIn] = useState<string | null>(null);
   const [selectedOut, setSelectedOut] = useState<string | null>(null);
@@ -450,6 +451,7 @@ export function App() {
   const [chainIndex, setChainIndex] = useState<number>(0);
   const lastClockTickRef = useRef<number | null>(null);
   const clockBpmRef = useRef<number | null>(null);
+  const transportStartAtRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
   const [projectHydrated, setProjectHydrated] = useState(false);
@@ -457,6 +459,8 @@ export function App() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSentStateJsonRef = useRef<string | null>(null);
   const [clockHeartbeat, setClockHeartbeat] = useState(0);
+  const [transportLocked, setTransportLocked] = useState(false);
+  const [lastTransport, setLastTransport] = useState<{ kind: "start" | "stop"; source: string; ts: number } | null>(null);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
   const selectedDeviceIdRef = useRef<string | null>(null);
@@ -464,6 +468,11 @@ export function App() {
   const learnTargetRef = useRef<{ controlId: string; slotIndex: number } | null>(null);
   const [learnStatus, setLearnStatus] = useState<"idle" | "listening" | "captured" | "timeout">("idle");
   const learnTimerRef = useRef<number | null>(null);
+  const followClockStartRef = useRef(followClockStart);
+  const pendingSnapshotRef = useRef<string | null>(null);
+  const startChainRef = useRef<() => void>(() => {});
+  const stopChainRef = useRef<() => void>(() => {});
+  const triggerSnapshotRef = useRef<(name: string) => void>(() => {});
 
   useEffect(() => {
     selectedInRef.current = selectedIn;
@@ -476,6 +485,59 @@ export function App() {
   useEffect(() => {
     selectedDeviceIdRef.current = selectedDeviceId;
   }, [selectedDeviceId]);
+
+  useEffect(() => {
+    portsRef.current = ports;
+  }, [ports]);
+
+  useEffect(() => {
+    followClockStartRef.current = followClockStart;
+  }, [followClockStart]);
+
+  useEffect(() => {
+    pendingSnapshotRef.current = pendingSnapshot;
+  }, [pendingSnapshot]);
+
+  function resolvePortName(id: string | null | undefined): string | null {
+    if (!id) return null;
+    const found = [...portsRef.current.inputs, ...portsRef.current.outputs].find((p) => p.id === id);
+    return found?.name ?? null;
+  }
+
+  function normalizeTransportEvent(evt: MidiEvent): "start" | "stop" | null {
+    if (evt.msg.t === "start") return "start";
+    if (evt.msg.t === "stop") return "stop";
+    if (evt.msg.t !== "cc") return null;
+    if (evt.msg.val <= 0) return null;
+    if (evt.msg.cc !== 105 && evt.msg.cc !== 106 && evt.msg.cc !== 107) return null;
+    const label = evt.src.name ?? resolvePortName(evt.src.id);
+    if (!label) return null;
+    const oxi = analyzeOxiPortName(label);
+    if (!oxi.isOxi) return null;
+    return evt.msg.cc === 105 ? "stop" : "start";
+  }
+
+  function handleTransportSignal(kind: "start" | "stop", evt: MidiEvent) {
+    const label = formatPortLabel(evt.src.name ?? resolvePortName(evt.src.id) ?? evt.src.id);
+    const ts = evt.ts ?? Date.now();
+    setLastTransport({ kind, source: label, ts });
+    if (kind === "start") {
+      transportStartAtRef.current = ts;
+      setTransportLocked(true);
+      if (pendingSnapshotRef.current) {
+        triggerSnapshotRef.current(pendingSnapshotRef.current);
+      }
+      if (followClockStartRef.current) {
+        startChainRef.current();
+      }
+    } else {
+      transportStartAtRef.current = null;
+      setTransportLocked(false);
+      if (followClockStartRef.current) {
+        stopChainRef.current();
+      }
+    }
+  }
 
   useEffect(() => {
     if (!midiApi) return;
@@ -617,11 +679,9 @@ export function App() {
         lastClockTickRef.current = now;
       }
 
-      if (evt.msg.t === "start" && followClockStart) {
-        startChain();
-      }
-      if (evt.msg.t === "stop" && followClockStart) {
-        stopChain();
+      const transportKind = normalizeTransportEvent(evt);
+      if (transportKind) {
+        handleTransportSignal(transportKind, evt);
       }
     });
     return () => {
@@ -1260,13 +1320,24 @@ export function App() {
     }
   }
 
+  function computeGridDelayMs(bars: number, effectiveBpm: number) {
+    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
+    const cycle = qMs * Math.max(1, bars);
+    if (cycle <= 0) return 0;
+    const origin = transportStartAtRef.current;
+    if (!origin) return cycle;
+    const now = Date.now();
+    if (now <= origin) return cycle;
+    const cyclesElapsed = Math.floor((now - origin) / cycle);
+    const nextAt = origin + (cyclesElapsed + 1) * cycle;
+    return Math.max(0, nextAt - now);
+  }
+
   function triggerSnapshot(name: string) {
     clearSnapshotTimer();
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
-  const shouldDelay = snapshotMode === "commit" && qMs > 0;
-  const waitMs = shouldDelay ? qMs : qMs;
-    if (qMs === 0 || snapshotMode === "jump") {
+    const waitMs = computeGridDelayMs(1, effectiveBpm);
+    if (waitMs === 0 || snapshotMode === "jump") {
       setActiveSnapshot(name);
       void sendSnapshotNow();
       setPendingSnapshot(null);
@@ -1291,7 +1362,7 @@ export function App() {
     setChainIndex(idx);
     triggerSnapshot(chainSteps[idx].snapshot);
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const delayMs = quantizeToMs(snapshotQuantize, effectiveBpm) * Math.max(1, chainSteps[idx].bars);
+    const delayMs = computeGridDelayMs(Math.max(1, chainSteps[idx].bars), effectiveBpm);
     if (delayMs === 0) {
       playChainStep(idx + 1);
       return;
@@ -1318,6 +1389,12 @@ export function App() {
     setChainIndex(0);
     setPendingSnapshot(null);
   }
+
+  useEffect(() => {
+    startChainRef.current = startChain;
+    stopChainRef.current = stopChain;
+    triggerSnapshotRef.current = triggerSnapshot;
+  }, [startChain, stopChain, triggerSnapshot]);
 
   function addChainStep() {
     if (snapshots.length === 0) return;
@@ -1391,6 +1468,9 @@ export function App() {
 
   const route = activeView;
   const monitorRows = activity.slice(0, 12);
+  const lastTransportLabel = lastTransport
+    ? `${lastTransport.kind === "start" ? "Start" : "Stop"} • ${lastTransport.source}`
+    : "No transport";
 
   return (
     <div style={styles.window}>
@@ -1426,6 +1506,8 @@ export function App() {
               ? formatPortLabel(ports.outputs.find((p) => p.id === selectedOut)?.name ?? selectedOut)
               : "No output"
           }
+          transportLocked={transportLocked}
+          lastTransportLabel={lastTransportLabel}
         />
         <BodySplitPane>
           <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} onPanic={panicAll} />
@@ -1521,7 +1603,9 @@ function TopStatusBar({
   onToggleFollowClockStart,
   backendLabel,
   inputLabel,
-  outputLabel
+  outputLabel,
+  transportLocked,
+  lastTransportLabel
 }: {
   saveLabel: string;
   lastSavedAt: number | null;
@@ -1542,6 +1626,8 @@ function TopStatusBar({
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
+  transportLocked: boolean;
+  lastTransportLabel: string;
 }) {
   return (
     <>
@@ -1573,6 +1659,8 @@ function TopStatusBar({
               : `Clock: ${clockBpm?.toFixed(1) ?? "??"} bpm`
             : "Clock: Manual"
         }
+        transportLocked={transportLocked}
+        lastTransportLabel={lastTransportLabel}
       />
     </>
   );
@@ -1704,12 +1792,16 @@ function StatusStrip({
   backendLabel,
   inputLabel,
   outputLabel,
-  clockLabel
+  clockLabel,
+  transportLocked,
+  lastTransportLabel
 }: {
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
   clockLabel: string;
+  transportLocked: boolean;
+  lastTransportLabel: string;
 }) {
   return (
     <div style={{ ...styles.bottomBar, backgroundColor: "#0f0f0f", borderTop: "1px solid #1e1e1e" }}>
@@ -1722,6 +1814,9 @@ function StatusStrip({
       </div>
       <div style={styles.row}>
         <span style={styles.muted}>{clockLabel}</span>
+        <span style={{ ...styles.dot, backgroundColor: transportLocked ? "#35c96a" : "#555", marginLeft: 8 }} />
+        <span style={styles.valueText}>{transportLocked ? "Transport locked" : "Transport idle"}</span>
+        <span style={{ ...styles.muted, marginLeft: 8 }}>{lastTransportLabel}</span>
       </div>
     </div>
   );
