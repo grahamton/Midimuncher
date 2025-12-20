@@ -1245,22 +1245,19 @@ export function App() {
   async function sendSnapshotNow() {
     if (!midiApi) return;
     const batches: { portId: string; msg: MidiMsg }[] = [];
-    devices.forEach((device) => {
-      if (!device.outputId) return;
-      controls.forEach((control) => {
-        control.slots.forEach((slot) => {
-          if (!slot?.enabled || slot.kind !== "cc") return;
-          const normalized = withTargetDefaults(slot);
-          const slotTargets = resolveSlotTargets(normalized, devices);
-          slotTargets.forEach(({ device: targetDevice, target }) => {
-            if (!targetDevice.outputId) return;
-            const channel = clampChannel(target?.channel ?? normalized.channel ?? targetDevice.channel);
-            const cc = clampMidi(target?.cc ?? normalized.cc ?? 0);
-            const value = clampMidi(normalized.max ?? 127);
-            batches.push({
-              portId: targetDevice.outputId,
-              msg: { t: "cc", ch: channel, cc, val: value }
-            });
+    controls.forEach((control) => {
+      control.slots.forEach((slot) => {
+        if (!slot?.enabled || slot.kind !== "cc") return;
+        const normalized = withTargetDefaults(slot);
+        const slotTargets = resolveSlotTargets(normalized, devices);
+        slotTargets.forEach(({ device: targetDevice, target }) => {
+          if (!targetDevice.outputId) return;
+          const channel = clampChannel(target?.channel ?? normalized.channel ?? targetDevice.channel);
+          const cc = clampMidi(target?.cc ?? normalized.cc ?? 0);
+          const value = clampMidi(normalized.max ?? 127);
+          batches.push({
+            portId: targetDevice.outputId,
+            msg: { t: "cc", ch: channel, cc, val: value }
           });
         });
       });
