@@ -1,4 +1,5 @@
-import type { ControlElement } from "@midi-playground/core";
+import type { ControlElement, Curve, MappingSlot, MappingSlotTarget } from "@midi-playground/core";
+import { defaultSlots } from "@midi-playground/core";
 import type { RouteConfig } from "./ipcTypes";
 
 export type SnapshotQuantize = "immediate" | "bar1" | "bar4";
@@ -145,6 +146,89 @@ function coerceSnapshotMode(value: unknown, fallback: SnapshotMode): SnapshotMod
   return value === "jump" || value === "commit" ? value : fallback;
 }
 
+function coerceCurve(value: unknown, fallback: Curve): Curve {
+  return value === "linear" || value === "expo" || value === "log" ? value : fallback;
+}
+
+function coerceMappingTarget(raw: unknown): MappingSlotTarget | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const deviceId = typeof rec.deviceId === "string" ? rec.deviceId : null;
+  if (!deviceId) return null;
+  const target: MappingSlotTarget = { deviceId };
+  if (typeof rec.channel === "number") {
+    target.channel = clampNumber(asNumberOr(rec.channel, 1), 1, 16);
+  }
+  if (typeof rec.cc === "number") {
+    target.cc = clampNumber(asNumberOr(rec.cc, 0), 0, 127);
+  }
+  return target;
+}
+
+function coerceMappingSlot(raw: unknown): MappingSlot {
+  if (!raw || typeof raw !== "object") return { enabled: false, kind: "empty", targets: [], broadcast: false, targetDeviceId: null };
+  const rec = raw as Record<string, unknown>;
+  const enabled = asBooleanOr(rec.enabled, false);
+  const targets = asArray<unknown>(rec.targets).map(coerceMappingTarget).filter(Boolean) as MappingSlotTarget[];
+  const broadcast = asBooleanOr(rec.broadcast, false);
+  const targetDeviceId = asStringOrNull(rec.targetDeviceId);
+
+  if (rec.kind === "cc") {
+    return {
+      enabled,
+      kind: "cc",
+      cc: clampNumber(asNumberOr(rec.cc, 0), 0, 127),
+      channel: typeof rec.channel === "number" ? clampNumber(asNumberOr(rec.channel, 1), 1, 16) : undefined,
+      min: clampNumber(asNumberOr(rec.min, 0), 0, 127),
+      max: clampNumber(asNumberOr(rec.max, 127), 0, 127),
+      curve: coerceCurve(rec.curve, "linear"),
+      targets,
+      broadcast,
+      targetDeviceId
+    };
+  }
+  if (rec.kind === "pc") {
+    return {
+      enabled,
+      kind: "pc",
+      channel: typeof rec.channel === "number" ? clampNumber(asNumberOr(rec.channel, 1), 1, 16) : undefined,
+      min: clampNumber(asNumberOr(rec.min, 0), 0, 127),
+      max: clampNumber(asNumberOr(rec.max, 127), 0, 127),
+      curve: coerceCurve(rec.curve, "linear"),
+      targets,
+      broadcast,
+      targetDeviceId
+    };
+  }
+  if (rec.kind === "note") {
+    return {
+      enabled,
+      kind: "note",
+      note: clampNumber(asNumberOr(rec.note, 60), 0, 127),
+      channel: typeof rec.channel === "number" ? clampNumber(asNumberOr(rec.channel, 1), 1, 16) : undefined,
+      vel: clampNumber(asNumberOr(rec.vel, 100), 0, 127),
+      targets,
+      broadcast,
+      targetDeviceId
+    };
+  }
+
+  return { enabled: false, kind: "empty", targets, broadcast, targetDeviceId } as MappingSlot;
+}
+
+function coerceControlElement(raw: Record<string, unknown>, idx: number): ControlElement {
+  const type = raw.type === "fader" || raw.type === "button" ? raw.type : "knob";
+  const label = typeof raw.label === "string" ? raw.label : `Control ${idx + 1}`;
+  const slots = asArray<unknown>(raw.slots).map(coerceMappingSlot);
+  return {
+    id: typeof raw.id === "string" ? raw.id : `control-${idx + 1}`,
+    label,
+    type,
+    value: clampNumber(asNumberOr(raw.value, 0), 0, 127),
+    slots: slots.length ? slots : defaultSlots()
+  };
+}
+
 function coerceChainStep(value: unknown): ChainStep | null {
   if (!value || typeof value !== "object") return null;
   const rec = value as Record<string, unknown>;
@@ -213,7 +297,7 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
       })(),
       devices,
       routes: asArray<RouteConfig>(rawState.routes),
-      controls: asArray<ControlElement>(rawState.controls),
+      controls: asArray<Record<string, unknown>>(rawState.controls).map(coerceControlElement),
       selectedControlId: asStringOrNull(rawState.selectedControlId),
       ui: {
         routeBuilder: {
