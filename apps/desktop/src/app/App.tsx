@@ -23,7 +23,7 @@ import {
   Zap
 } from "lucide-react";
 import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
-import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg, MidiPortRef } from "@midi-playground/core";
+import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
   MidiPortInfo,
@@ -43,7 +43,6 @@ import type {
 } from "../../shared/projectTypes";
 import { ControlLabPage } from "./ControlLabPage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
-import { MacroTargetEditor } from "./components/MacroTargetEditor";
 import { quantizeToMs } from "./lib/tempo";
 
 const LOG_LIMIT = 100;
@@ -52,7 +51,7 @@ const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
 const CLOCK_PPQN = 24;
 
-const styles: Record<string, any> = {
+const styles = {
   window: {
     height: "100vh",
     width: "100vw",
@@ -413,6 +412,7 @@ export function App() {
   const defaults = defaultProjectState();
   const midiApi = typeof window !== "undefined" ? window.midi : undefined;
   const [ports, setPorts] = useState<MidiPorts>({ inputs: [], outputs: [] });
+  const portsRef = useRef<MidiPorts>({ inputs: [], outputs: [] });
   const [backends, setBackends] = useState<MidiBackendInfo[]>([]);
   const [selectedIn, setSelectedIn] = useState<string | null>(null);
   const [selectedOut, setSelectedOut] = useState<string | null>(null);
@@ -451,6 +451,7 @@ export function App() {
   const [chainIndex, setChainIndex] = useState<number>(0);
   const lastClockTickRef = useRef<number | null>(null);
   const clockBpmRef = useRef<number | null>(null);
+  const transportStartAtRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
   const [projectHydrated, setProjectHydrated] = useState(false);
@@ -458,6 +459,8 @@ export function App() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSentStateJsonRef = useRef<string | null>(null);
   const [clockHeartbeat, setClockHeartbeat] = useState(0);
+  const [transportLocked, setTransportLocked] = useState(false);
+  const [lastTransport, setLastTransport] = useState<{ kind: "start" | "stop"; source: string; ts: number } | null>(null);
   const selectedInRef = useRef<string | null>(null);
   const devicesRef = useRef<DeviceConfig[]>([]);
   const selectedDeviceIdRef = useRef<string | null>(null);
@@ -465,7 +468,11 @@ export function App() {
   const learnTargetRef = useRef<{ controlId: string; slotIndex: number } | null>(null);
   const [learnStatus, setLearnStatus] = useState<"idle" | "listening" | "captured" | "timeout">("idle");
   const learnTimerRef = useRef<number | null>(null);
-  const [mappingValidation, setMappingValidation] = useState<string | null>(null);
+  const followClockStartRef = useRef(followClockStart);
+  const pendingSnapshotRef = useRef<string | null>(null);
+  const startChainRef = useRef<() => void>(() => {});
+  const stopChainRef = useRef<() => void>(() => {});
+  const triggerSnapshotRef = useRef<(name: string) => void>(() => {});
 
   useEffect(() => {
     selectedInRef.current = selectedIn;
@@ -478,6 +485,59 @@ export function App() {
   useEffect(() => {
     selectedDeviceIdRef.current = selectedDeviceId;
   }, [selectedDeviceId]);
+
+  useEffect(() => {
+    portsRef.current = ports;
+  }, [ports]);
+
+  useEffect(() => {
+    followClockStartRef.current = followClockStart;
+  }, [followClockStart]);
+
+  useEffect(() => {
+    pendingSnapshotRef.current = pendingSnapshot;
+  }, [pendingSnapshot]);
+
+  function resolvePortName(id: string | null | undefined): string | null {
+    if (!id) return null;
+    const found = [...portsRef.current.inputs, ...portsRef.current.outputs].find((p) => p.id === id);
+    return found?.name ?? null;
+  }
+
+  function normalizeTransportEvent(evt: MidiEvent): "start" | "stop" | null {
+    if (evt.msg.t === "start") return "start";
+    if (evt.msg.t === "stop") return "stop";
+    if (evt.msg.t !== "cc") return null;
+    if (evt.msg.val <= 0) return null;
+    if (evt.msg.cc !== 105 && evt.msg.cc !== 106 && evt.msg.cc !== 107) return null;
+    const label = evt.src.name ?? resolvePortName(evt.src.id);
+    if (!label) return null;
+    const oxi = analyzeOxiPortName(label);
+    if (!oxi.isOxi) return null;
+    return evt.msg.cc === 105 ? "stop" : "start";
+  }
+
+  function handleTransportSignal(kind: "start" | "stop", evt: MidiEvent) {
+    const label = formatPortLabel(evt.src.name ?? resolvePortName(evt.src.id) ?? evt.src.id);
+    const ts = evt.ts ?? Date.now();
+    setLastTransport({ kind, source: label, ts });
+    if (kind === "start") {
+      transportStartAtRef.current = ts;
+      setTransportLocked(true);
+      if (pendingSnapshotRef.current) {
+        triggerSnapshotRef.current(pendingSnapshotRef.current);
+      }
+      if (followClockStartRef.current) {
+        startChainRef.current();
+      }
+    } else {
+      transportStartAtRef.current = null;
+      setTransportLocked(false);
+      if (followClockStartRef.current) {
+        stopChainRef.current();
+      }
+    }
+  }
 
   useEffect(() => {
     if (!midiApi) return;
@@ -557,7 +617,6 @@ export function App() {
     const unsubscribe = midiApi.onEvent((evt) => {
       const target = learnTargetRef.current;
       if (target && evt.msg.t === "cc") {
-        const msg: Extract<MidiMsg, { t: "cc" }> = evt.msg;
         const currentSelectedIn = selectedInRef.current;
         if (!currentSelectedIn || evt.src.id === currentSelectedIn) {
           learnTargetRef.current = null;
@@ -568,56 +627,34 @@ export function App() {
           }
           setLearnStatus("captured");
 
-          const devicesSnapshot = devicesRef.current;
           setControls((current) =>
             current.map((c) => {
               if (c.id !== target.controlId) return c;
               const slots = [...c.slots];
               const existing = slots[target.slotIndex];
               const fallbackTarget =
-                selectedDeviceIdRef.current ?? devicesSnapshot[0]?.id ?? null;
+                selectedDeviceIdRef.current ?? devicesRef.current[0]?.id ?? null;
 
-              const nextSlot: MappingSlot = !existing || existing.kind !== "cc"
-                ? {
-                    enabled: true,
-                    kind: "cc",
-                    cc: clampMidi(msg.cc),
-                    channel: clampChannel(msg.ch),
-                    min: 0,
-                    max: 127,
-                    curve: "linear",
-                    targetDeviceId: fallbackTarget
-                  }
-                : {
-                    ...existing,
-                    enabled: true,
-                    cc: clampMidi(msg.cc),
-                    channel: clampChannel(msg.ch),
-                    targetDeviceId: existing.targetDeviceId ?? fallbackTarget
-                  };
-
-              const nextKey = slotConflictKey(nextSlot, devicesSnapshot);
-              const conflictIdx =
-                nextKey === null
-                  ? -1
-                  : slots.findIndex(
-                      (slot, idx) =>
-                        idx !== target.slotIndex && slotConflictKey(slot, devicesSnapshot) === nextKey
-                    );
-
-              if (conflictIdx !== -1) {
-                const ccSlot = nextSlot as Extract<MappingSlot, { kind: "cc" }>;
-                setMappingValidation(
-                  `Slot S${target.slotIndex + 1} conflicts with slot S${conflictIdx + 1} (ch ${resolveSlotChannel(
-                    nextSlot,
-                    devicesSnapshot
-                  )} CC ${ccSlot.cc ?? 0}).`
-                );
-                return c;
+              if (!existing || existing.kind !== "cc") {
+                slots[target.slotIndex] = {
+                  enabled: true,
+                  kind: "cc",
+                  cc: clampMidi(evt.msg.cc),
+                  channel: clampChannel(evt.msg.ch),
+                  min: 0,
+                  max: 127,
+                  curve: "linear",
+                  targetDeviceId: fallbackTarget
+                };
+              } else {
+                slots[target.slotIndex] = {
+                  ...existing,
+                  enabled: true,
+                  cc: clampMidi(evt.msg.cc),
+                  channel: clampChannel(evt.msg.ch),
+                  targetDeviceId: existing.targetDeviceId ?? fallbackTarget
+                };
               }
-
-              setMappingValidation(null);
-              slots[target.slotIndex] = nextSlot;
               return { ...c, slots };
             })
           );
@@ -642,11 +679,9 @@ export function App() {
         lastClockTickRef.current = now;
       }
 
-      if (evt.msg.t === "start" && followClockStart) {
-        startChain();
-      }
-      if (evt.msg.t === "stop" && followClockStart) {
-        stopChain();
+      const transportKind = normalizeTransportEvent(evt);
+      if (transportKind) {
+        handleTransportSignal(transportKind, evt);
       }
     });
     return () => {
@@ -886,7 +921,7 @@ export function App() {
 
   async function panicAll() {
     if (!midiApi) return;
-    const panicSrc: MidiPortRef = { id: "panic", name: "Panic", kind: "virtual" };
+    const panicSrc: MidiPortInfo = { id: "panic", name: "Panic", direction: "out" };
     const ts = Date.now();
     setLog((current) => [{ ts, src: panicSrc, msg: { t: "stop" } as MidiMsg }, ...current].slice(0, LOG_LIMIT));
     const outs = ports.outputs;
@@ -955,7 +990,6 @@ export function App() {
     learnTargetRef.current = next;
     setLearnTarget(next);
     setLearnStatus("listening");
-    setMappingValidation(null);
 
     learnTimerRef.current = window.setTimeout(() => {
       learnTargetRef.current = null;
@@ -969,7 +1003,6 @@ export function App() {
     learnTargetRef.current = null;
     setLearnTarget(null);
     setLearnStatus("idle");
-    setMappingValidation(null);
     if (learnTimerRef.current) {
       window.clearTimeout(learnTimerRef.current);
       learnTimerRef.current = null;
@@ -1287,13 +1320,24 @@ export function App() {
     }
   }
 
+  function computeGridDelayMs(bars: number, effectiveBpm: number) {
+    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
+    const cycle = qMs * Math.max(1, bars);
+    if (cycle <= 0) return 0;
+    const origin = transportStartAtRef.current;
+    if (!origin) return cycle;
+    const now = Date.now();
+    if (now <= origin) return cycle;
+    const cyclesElapsed = Math.floor((now - origin) / cycle);
+    const nextAt = origin + (cyclesElapsed + 1) * cycle;
+    return Math.max(0, nextAt - now);
+  }
+
   function triggerSnapshot(name: string) {
     clearSnapshotTimer();
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const qMs = quantizeToMs(snapshotQuantize, effectiveBpm);
-  const shouldDelay = snapshotMode === "commit" && qMs > 0;
-  const waitMs = shouldDelay ? qMs : qMs;
-    if (qMs === 0 || snapshotMode === "jump") {
+    const waitMs = computeGridDelayMs(1, effectiveBpm);
+    if (waitMs === 0 || snapshotMode === "jump") {
       setActiveSnapshot(name);
       void sendSnapshotNow();
       setPendingSnapshot(null);
@@ -1318,7 +1362,7 @@ export function App() {
     setChainIndex(idx);
     triggerSnapshot(chainSteps[idx].snapshot);
     const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const delayMs = quantizeToMs(snapshotQuantize, effectiveBpm) * Math.max(1, chainSteps[idx].bars);
+    const delayMs = computeGridDelayMs(Math.max(1, chainSteps[idx].bars), effectiveBpm);
     if (delayMs === 0) {
       playChainStep(idx + 1);
       return;
@@ -1345,6 +1389,12 @@ export function App() {
     setChainIndex(0);
     setPendingSnapshot(null);
   }
+
+  useEffect(() => {
+    startChainRef.current = startChain;
+    stopChainRef.current = stopChain;
+    triggerSnapshotRef.current = triggerSnapshot;
+  }, [startChain, stopChain, triggerSnapshot]);
 
   function addChainStep() {
     if (snapshots.length === 0) return;
@@ -1418,6 +1468,9 @@ export function App() {
 
   const route = activeView;
   const monitorRows = activity.slice(0, 12);
+  const lastTransportLabel = lastTransport
+    ? `${lastTransport.kind === "start" ? "Start" : "Stop"} • ${lastTransport.source}`
+    : "No transport";
 
   return (
     <div style={styles.window}>
@@ -1453,6 +1506,8 @@ export function App() {
               ? formatPortLabel(ports.outputs.find((p) => p.id === selectedOut)?.name ?? selectedOut)
               : "No output"
           }
+          transportLocked={transportLocked}
+          lastTransportLabel={lastTransportLabel}
         />
         <BodySplitPane>
           <LeftNavRail route={route} onChangeRoute={(next) => setActiveView(next)} onPanic={panicAll} />
@@ -1480,8 +1535,6 @@ export function App() {
             learnStatus={learnStatus}
             onLearn={(slotIndex) => selectedControl && startLearn(selectedControl.id, slotIndex)}
             onCancelLearn={cancelLearn}
-            validationMessage={mappingValidation}
-            setValidationMessage={setMappingValidation}
             note={note}
             ccValue={ccValue}
             onSendNote={sendTestNote}
@@ -1550,7 +1603,9 @@ function TopStatusBar({
   onToggleFollowClockStart,
   backendLabel,
   inputLabel,
-  outputLabel
+  outputLabel,
+  transportLocked,
+  lastTransportLabel
 }: {
   saveLabel: string;
   lastSavedAt: number | null;
@@ -1571,6 +1626,8 @@ function TopStatusBar({
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
+  transportLocked: boolean;
+  lastTransportLabel: string;
 }) {
   return (
     <>
@@ -1602,6 +1659,8 @@ function TopStatusBar({
               : `Clock: ${clockBpm?.toFixed(1) ?? "??"} bpm`
             : "Clock: Manual"
         }
+        transportLocked={transportLocked}
+        lastTransportLabel={lastTransportLabel}
       />
     </>
   );
@@ -1733,12 +1792,16 @@ function StatusStrip({
   backendLabel,
   inputLabel,
   outputLabel,
-  clockLabel
+  clockLabel,
+  transportLocked,
+  lastTransportLabel
 }: {
   backendLabel: string;
   inputLabel: string;
   outputLabel: string;
   clockLabel: string;
+  transportLocked: boolean;
+  lastTransportLabel: string;
 }) {
   return (
     <div style={{ ...styles.bottomBar, backgroundColor: "#0f0f0f", borderTop: "1px solid #1e1e1e" }}>
@@ -1751,6 +1814,9 @@ function StatusStrip({
       </div>
       <div style={styles.row}>
         <span style={styles.muted}>{clockLabel}</span>
+        <span style={{ ...styles.dot, backgroundColor: transportLocked ? "#35c96a" : "#555", marginLeft: 8 }} />
+        <span style={styles.valueText}>{transportLocked ? "Transport locked" : "Transport idle"}</span>
+        <span style={{ ...styles.muted, marginLeft: 8 }}>{lastTransportLabel}</span>
       </div>
     </div>
   );
@@ -1869,6 +1935,8 @@ function MainContentArea(props: {
   onQuickProgram: (portId: string | null, channel: number, program: number) => void;
   onSendSnapshot: () => void;
   onAddDeviceRoutes: () => void;
+  updateControl?: (id: string, partial: Partial<ControlElement>) => void;
+  onEmitControl?: (control: ControlElement, rawValue: number) => void;
   snapshots: string[];
   activeSnapshot: string | null;
   onSelectSnapshot: (name: string) => void;
@@ -1889,7 +1957,7 @@ function MainContentArea(props: {
   onMoveChainStep: (from: number, to: number) => void;
   onUpdateChainBars: (index: number, bars: number) => void;
   logCapReached: boolean;
-  monitorRows: { _rowId: string; ts: number; src: MidiPortRef; label: string }[];
+  monitorRows: { _rowId: string; ts: number; src: MidiPortInfo; label: string }[];
   clearLog: () => void;
   controls: ControlElement[];
   selectedControl: ControlElement | undefined;
@@ -1901,8 +1969,6 @@ function MainContentArea(props: {
   learnStatus: "idle" | "listening" | "captured" | "timeout";
   onLearn: (slotIndex: number) => void;
   onCancelLearn: () => void;
-  validationMessage: string | null;
-  setValidationMessage: (msg: string | null) => void;
   note: number;
   ccValue: number;
   onSendNote: () => void;
@@ -1946,13 +2012,11 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           selectedControlId={rest.selectedControlId}
           setSelectedControlId={rest.setSelectedControlId}
           updateSlot={rest.updateSlot}
-          updateControl={rest.updateControl}
-          onEmitControl={rest.onEmitControl}
+          updateControl={updateControl}
+          onEmitControl={emitControl}
           learnStatus={rest.learnStatus}
           onLearn={rest.onLearn}
           onCancelLearn={rest.onCancelLearn}
-          validationMessage={rest.validationMessage}
-          setValidationMessage={rest.setValidationMessage}
           onSendNote={rest.onSendNote}
           onSendCc={rest.onSendCc}
           note={rest.note}
@@ -2242,6 +2306,138 @@ function SetupPage({
           </button>
         </Panel>
       </div>
+      <Panel title="Assignment wizard (stub)">
+        <p style={styles.muted}>
+          Multi-bind flow with instrument-aware picker and color tags. Select parameters and bind them to a macro or pad in one
+          pass.
+        </p>
+        <button style={styles.btnPrimary} onClick={() => setShowWizard(true)} disabled={!targetProfile}>
+          Open wizard
+        </button>
+        {showWizard && targetProfile ? (
+          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 8 }}>
+            {targetProfile.cc.slice(0, 6).map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: `2px solid ${wizardSelected.includes(c.cc) ? wizardColor : "#1f2937"}`,
+                  background: wizardSelected.includes(c.cc) ? `${wizardColor}22` : "#0b1220",
+                  color: "#e2e8f0"
+                }}
+                onClick={() =>
+                  setWizardSelected((prev) =>
+                    prev.includes(c.cc) ? prev.filter((id) => id !== c.cc) : [...prev, c.cc]
+                  )
+                }
+              >
+                <div style={{ fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{c.label}</span>
+                  <span style={{ color: wizardSelected.includes(c.cc) ? "#38bdf8" : "#94a3b8", fontSize: 12 }}>
+                    CC {c.cc}
+                  </span>
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
+                  Tap to {wizardSelected.includes(c.cc) ? "remove" : "select"}
+                </div>
+              </div>
+            ))}
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={styles.muted}>Curve</span>
+              <select style={styles.select} value={wizardCurve} onChange={(e) => setWizardCurve(e.target.value as Curve)}>
+                <option value="linear">Linear</option>
+                <option value="expo">Expo</option>
+                <option value="log">Log</option>
+              </select>
+              <span style={styles.muted}>Min</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={wizardMin}
+                onChange={(e) => setWizardMin(clampMidi(Number(e.target.value) || 0))}
+              />
+              <span style={styles.muted}>Max</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={0}
+                max={127}
+                value={wizardMax}
+                onChange={(e) => setWizardMax(clampMidi(Number(e.target.value) || 0))}
+              />
+              <span style={styles.muted}>Start slot</span>
+              <input
+                style={styles.inputNarrow}
+                type="number"
+                min={1}
+                max={8}
+                value={wizardStartSlot + 1}
+                onChange={(e) => setWizardStartSlot(Math.max(0, Math.min(7, Number(e.target.value) - 1 || 0)))}
+              />
+              <span style={styles.muted}>Device</span>
+              <select
+                style={styles.select}
+                value={wizardDeviceId ?? ""}
+                onChange={(e) => setWizardDeviceId(e.target.value || null)}
+              >
+                <option value="">No target</option>
+                {devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name || d.id}
+                  </option>
+                ))}
+              </select>
+              <span style={styles.muted}>Color</span>
+              <input
+                type="color"
+                value={wizardColor}
+                onChange={(e) => setWizardColor(e.target.value)}
+                style={{ width: 40, height: 30, border: "1px solid #1f2937", borderRadius: 6, background: "#0b1220" }}
+              />
+              <button
+                style={styles.btnPrimary}
+                disabled={!selectedControl || wizardSelected.length === 0}
+                onClick={() => {
+                  if (!selectedControl) return;
+                  const start = wizardStartSlot;
+                  wizardSelected.forEach((ccVal, i) => {
+                    const slotIndex = start + i;
+                    if (slotIndex >= selectedControl.slots.length) return;
+                    updateSlot(selectedControl.id, slotIndex, {
+                      enabled: true,
+                      kind: "cc",
+                      cc: clampMidi(ccVal),
+                      min: wizardMin,
+                      max: wizardMax,
+                      curve: wizardCurve,
+                      targetDeviceId: wizardDeviceId
+                    });
+                  });
+                }}
+              >
+                Bind selected ({wizardSelected.length})
+              </button>
+              <button
+                style={styles.btnSecondary}
+                onClick={() => {
+                  setWizardSelected([]);
+                  setWizardColor("#38bdf8");
+                  setWizardCurve("linear");
+                  setWizardMin(0);
+                  setWizardMax(127);
+                  setWizardStartSlot(0);
+                  setWizardDeviceId(targetDevice?.id ?? null);
+                }}
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Panel>
     </Page>
   );
 }
@@ -2257,8 +2453,6 @@ function MappingPage({
   learnStatus,
   onLearn,
   onCancelLearn,
-  validationMessage,
-  setValidationMessage,
   onSendNote,
   onSendCc,
   note,
@@ -2275,17 +2469,13 @@ function MappingPage({
   learnStatus: "idle" | "listening" | "captured" | "timeout";
   onLearn: (slotIndex: number) => void;
   onCancelLearn: () => void;
-  validationMessage: string | null;
-  setValidationMessage: (msg: string | null) => void;
   onSendNote: () => void;
   onSendCc: () => void;
   note: number;
   ccValue: number;
   devices: DeviceConfig[];
 }) {
-  const firstSlot = selectedControl?.slots[0];
-  const targetDeviceId = firstSlot && firstSlot.kind !== "empty" ? firstSlot.targetDeviceId : null;
-  const targetDevice = devices.find((d) => targetDeviceId === d.id) ?? devices[0];
+  const targetDevice = devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ?? devices[0];
   const targetProfile = targetDevice ? getInstrumentProfile(targetDevice.instrumentId) : null;
   const [showWizard, setShowWizard] = useState(false);
   const [wizardSelected, setWizardSelected] = useState<number[]>([]);
@@ -2295,72 +2485,15 @@ function MappingPage({
   const [wizardStartSlot, setWizardStartSlot] = useState(0);
   const [wizardDeviceId, setWizardDeviceId] = useState<string | null>(targetDevice?.id ?? null);
   const [wizardColor, setWizardColor] = useState("#38bdf8");
-  const [multiLearnActive, setMultiLearnActive] = useState(false);
-  const [multiLearnQueue, setMultiLearnQueue] = useState<number[]>([]);
-  const [multiLearnCount, setMultiLearnCount] = useState(3);
-  const [multiLearnStart, setMultiLearnStart] = useState(0);
-  const [slotValidation, setSlotValidation] = useState<Record<number, string>>({});
-  const [showMacroEditor, setShowMacroEditor] = useState(false);
   const macroTargets = [
     { label: "Filter", cc: targetProfile?.cc[0]?.cc ?? 74, min: 0, max: 127, curve: "linear" as Curve },
     { label: "Resonance", cc: targetProfile?.cc[1]?.cc ?? 71, min: 0, max: 110, curve: "expo" as Curve },
     { label: "Env Amt", cc: targetProfile?.cc[2]?.cc ?? 79, min: 10, max: 120, curve: "log" as Curve }
   ];
 
-  const slotConflictMessages = useMemo(() => {
-    const map: Record<number, string> = {};
-    if (!selectedControl) return map;
-    const seen = new Map<string, number>();
-    selectedControl.slots.forEach((slot, idx) => {
-      const key = slotConflictKey(slot, devices);
-      if (!key) return;
-      const existingIdx = seen.get(key);
-      if (existingIdx !== undefined) {
-        map[idx] = `Conflicts with slot S${existingIdx + 1}`;
-        if (!map[existingIdx]) {
-          map[existingIdx] = `Conflicts with slot S${idx + 1}`;
-        }
-      } else {
-        seen.set(key, idx);
-      }
-    });
-    return map;
-  }, [devices, selectedControl]);
-
-  function updateSlotWithValidation(slotIndex: number, partial: Partial<MappingSlot>) {
-    if (!selectedControl) return;
-    const nextSlot = { ...selectedControl.slots[slotIndex], ...partial } as MappingSlot;
-    const nextKey = slotConflictKey(nextSlot, devices);
-    const conflictIdx =
-      nextKey === null
-        ? -1
-        : selectedControl.slots.findIndex(
-            (slot, idx) => idx !== slotIndex && slotConflictKey(idx === slotIndex ? nextSlot : slot, devices) === nextKey
-          );
-
-    if (conflictIdx !== -1) {
-      const ccSlot = nextSlot as Extract<MappingSlot, { kind: "cc" }>;
-      setSlotValidation((current) => ({ ...current, [slotIndex]: `Conflicts with slot S${conflictIdx + 1}` }));
-      setValidationMessage(
-        `Slot S${slotIndex + 1} matches slot S${conflictIdx + 1} (ch ${resolveSlotChannel(nextSlot, devices)} CC ${
-          ccSlot.cc ?? 0
-        }).`
-      );
-      return;
-    }
-
-    setSlotValidation((current) => {
-      const next = { ...current };
-      delete next[slotIndex];
-      return next;
-    });
-    setValidationMessage(null);
-    updateSlot(selectedControl.id, slotIndex, partial);
-  }
-
   function applyPreset(ccNumber: number, slotIndex = 0) {
     if (!selectedControl) return;
-    updateSlotWithValidation(slotIndex, {
+    updateSlot(selectedControl.id, slotIndex, {
       kind: "cc",
       cc: clampMidi(ccNumber),
       enabled: true,
@@ -2372,7 +2505,7 @@ function MappingPage({
   function applyMacroMultiBind() {
     if (!selectedControl) return;
     macroTargets.slice(0, selectedControl.slots.length).forEach((t, idx) => {
-      updateSlotWithValidation(idx, {
+      updateSlot(selectedControl.id, idx, {
         enabled: true,
         kind: "cc",
         cc: clampMidi(t.cc),
@@ -2387,51 +2520,6 @@ function MappingPage({
       updateControl(selectedControl.id, { label: `${selectedControl.label} (macro x${macroTargets.length})` });
     }
   }
-
-  function beginMultiLearn() {
-    if (!selectedControl) return;
-    const start = Math.max(0, Math.min(selectedControl.slots.length - 1, multiLearnStart));
-    const count = Math.max(1, Math.min(selectedControl.slots.length - start, multiLearnCount));
-    const indices = selectedControl.slots.map((_, idx) => idx).slice(start, start + count);
-    if (!indices.length) return;
-    setMultiLearnQueue(indices);
-    setMultiLearnActive(true);
-    setValidationMessage(null);
-    onLearn(indices[0]);
-  }
-
-  const handleCancelLearn = () => {
-    setMultiLearnActive(false);
-    setMultiLearnQueue([]);
-    setValidationMessage(null);
-    onCancelLearn();
-  };
-
-  useEffect(() => {
-    if (!multiLearnActive) return;
-    if (learnStatus === "captured") {
-      setMultiLearnQueue((current) => {
-        const [, ...rest] = current;
-        if (rest.length) {
-          onLearn(rest[0]);
-        } else {
-          setMultiLearnActive(false);
-        }
-        return rest;
-      });
-    }
-
-    if (learnStatus === "timeout") {
-      setMultiLearnActive(false);
-      setMultiLearnQueue([]);
-    }
-  }, [learnStatus, multiLearnActive, onLearn]);
-
-  useEffect(() => {
-    setSlotValidation({});
-    setMultiLearnActive(false);
-    setMultiLearnQueue([]);
-  }, [selectedControlId]);
 
   function nudgeControl(next: number) {
     if (!selectedControl || !onEmitControl || !updateControl) return;
@@ -2449,7 +2537,7 @@ function MappingPage({
             <button style={styles.btnPrimary} onClick={() => onLearn(0)}>
               <Zap size={14} /> Learn Slot
             </button>
-            <button style={styles.btnSecondary} onClick={handleCancelLearn}>
+            <button style={styles.btnSecondary} onClick={onCancelLearn}>
               Cancel
             </button>
             <span style={styles.pill}>Status: {learnStatus}</span>
@@ -2503,123 +2591,56 @@ function MappingPage({
               <button style={styles.btnSecondary} onClick={applyMacroMultiBind} disabled={!selectedControl}>
                 Macro bind 3 targets
               </button>
-              <button style={styles.btnSecondary} disabled={!selectedControl} onClick={() => setShowMacroEditor(true)}>
-                Bulk edit targets
-              </button>
               <button
                 style={styles.btnSecondary}
                 disabled={!selectedControl}
-              onClick={() => {
-                if (!selectedControl) return;
-                selectedControl.slots.forEach((_, idx) =>
-                  updateSlotWithValidation(idx, { enabled: false, kind: "empty" })
-                );
-              }}
-            >
-              Clear slots
+                onClick={() => {
+                  if (!selectedControl) return;
+                  selectedControl.slots.forEach((_, idx) =>
+                    updateSlot(selectedControl.id, idx, { enabled: false, kind: "empty" })
+                  );
+                }}
+              >
+                Clear slots
               </button>
               <button style={styles.btnSecondary}>Add Target Slot</button>
             </div>
           }
         >
-          {validationMessage ? (
-            <div
-              style={{
-                marginBottom: 10,
-                padding: "8px 10px",
-                borderRadius: 6,
-                border: "1px solid #7f1d1d",
-                backgroundColor: "#2c1b1b",
-                color: "#fca5a5",
-                fontSize: 12
-              }}
-            >
-              {validationMessage}
-            </div>
-          ) : null}
-          <div style={{ ...styles.row, marginBottom: 8, flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
-            <span style={styles.muted}>MIDI learn mode</span>
-            <div style={styles.cluster}>
-              <span style={styles.muted}>Start slot</span>
-              <input
-                style={styles.inputNarrow}
-                type="number"
-                min={1}
-                max={selectedControl?.slots.length ?? 1}
-                value={Math.min(selectedControl?.slots.length ?? 1, multiLearnStart + 1)}
-                onChange={(e) =>
-                  setMultiLearnStart(
-                    Math.max(0, Math.min((selectedControl?.slots.length ?? 1) - 1, Number(e.target.value) - 1 || 0))
-                  )
-                }
-              />
-            </div>
-            <div style={styles.cluster}>
-              <span style={styles.muted}>Slot count</span>
-              <input
-                style={styles.inputNarrow}
-                type="number"
-                min={1}
-                max={selectedControl?.slots.length ?? 1}
-                value={Math.min(selectedControl?.slots.length ?? 1, multiLearnCount)}
-                onChange={(e) =>
-                  setMultiLearnCount(
-                    Math.max(1, Math.min(selectedControl?.slots.length ?? 1, Number(e.target.value) || 1))
-                  )
-                }
-              />
-            </div>
-            <button style={styles.btnSecondary} disabled={!selectedControl} onClick={beginMultiLearn}>
-              <Zap size={14} /> MIDI Learn {multiLearnCount} slots
-            </button>
-            {multiLearnActive ? (
-              <span style={styles.pill}>Listening ({multiLearnQueue.length} left)</span>
-            ) : null}
-          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(selectedControl ? selectedControl.slots : []).map((slot, idx) => {
-              const slotTargetId = slot.kind === "empty" ? "" : slot.targetDeviceId ?? "";
               const deviceName =
-                slotTargetId && slotTargetId !== ""
-                  ? devices.find((d) => d.id === slotTargetId)?.name ?? `Device ${slotTargetId}`
-                  : "No target";
+                devices.find((d) => d.id === slot.targetDeviceId)?.name ??
+                (slot.targetDeviceId ? `Device ${slot.targetDeviceId}` : "No target");
               const isCc = slot.kind === "cc";
               const isPc = slot.kind === "pc";
               const isNote = slot.kind === "note";
-              const slotWarning = slotValidation[idx] ?? slotConflictMessages[idx];
               return (
-                <div key={idx} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div
-                    style={{
-                      ...styles.tableRow,
-                      backgroundColor: slotWarning ? "#241313" : "#222",
-                      border: slotWarning ? "1px solid #7f1d1d" : "1px solid #1f2937"
-                    }}
+                <div key={idx} style={styles.tableRow}>
+                  <span style={styles.cellSmall}>S{idx + 1}</span>
+                  <select
+                    style={styles.select}
+                    value={slot.kind}
+                    onChange={(e) =>
+                      updateSlot(selectedControl!.id, idx, {
+                        kind: e.target.value as MappingSlot["kind"],
+                        enabled: e.target.value !== "empty"
+                      })
+                    }
                   >
-                    <span style={styles.cellSmall}>S{idx + 1}</span>
-                    <select
-                      style={styles.select}
-                      value={slot.kind}
-                      onChange={(e) =>
-                        updateSlotWithValidation(idx, {
-                          kind: e.target.value as MappingSlot["kind"],
-                          enabled: e.target.value !== "empty"
-                        })
-                      }
-                    >
-                      <option value="empty">Empty</option>
-                      <option value="cc">CC</option>
-                      <option value="pc">Program</option>
-                      <option value="note">Note</option>
-                    </select>
-                    <label style={{ ...styles.toggleRow, marginLeft: 6 }}>
-                      <input
-                        type="checkbox"
-                        checked={slot.enabled}
-                        onChange={(e) => updateSlotWithValidation(idx, { enabled: e.target.checked })}
-                      />
-                      <span style={styles.muted}>On</span>
-                    </label>
+                    <option value="empty">Empty</option>
+                    <option value="cc">CC</option>
+                    <option value="pc">Program</option>
+                    <option value="note">Note</option>
+                  </select>
+                  <label style={{ ...styles.toggleRow, marginLeft: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={slot.enabled}
+                      onChange={(e) => updateSlot(selectedControl!.id, idx, { enabled: e.target.checked })}
+                    />
+                    <span style={styles.muted}>On</span>
+                  </label>
                   {isCc ? (
                     <>
                       <input
@@ -2628,14 +2649,12 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.cc ?? 0}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { cc: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { cc: clampMidi(Number(e.target.value) || 0) })}
                       />
                       <select
                         style={styles.select}
                         value={slot.curve ?? "linear"}
-                        onChange={(e) => updateSlotWithValidation(idx, { curve: e.target.value as Curve })}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { curve: e.target.value as Curve })}
                       >
                         <option value="linear">Linear</option>
                         <option value="expo">Expo</option>
@@ -2647,9 +2666,7 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.min ?? 0}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { min: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { min: clampMidi(Number(e.target.value) || 0) })}
                       />
                       <input
                         style={styles.inputNarrow}
@@ -2657,9 +2674,7 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.max ?? 127}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { max: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { max: clampMidi(Number(e.target.value) || 0) })}
                       />
                     </>
                   ) : isPc ? (
@@ -2670,9 +2685,7 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.min ?? 0}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { min: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { min: clampMidi(Number(e.target.value) || 0) })}
                       />
                       <input
                         style={styles.inputNarrow}
@@ -2680,14 +2693,12 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.max ?? 127}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { max: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { max: clampMidi(Number(e.target.value) || 0) })}
                       />
                       <select
                         style={styles.select}
                         value={slot.curve ?? "linear"}
-                        onChange={(e) => updateSlotWithValidation(idx, { curve: e.target.value as Curve })}
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { curve: e.target.value as Curve })}
                       >
                         <option value="linear">Linear</option>
                         <option value="expo">Expo</option>
@@ -2702,9 +2713,7 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.note ?? 60}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { note: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { note: clampMidi(Number(e.target.value) || 0) })}
                       />
                       <input
                         style={styles.inputNarrow}
@@ -2712,33 +2721,27 @@ function MappingPage({
                         min={0}
                         max={127}
                         value={slot.vel ?? 100}
-                        onChange={(e) =>
-                          updateSlotWithValidation(idx, { vel: clampMidi(Number(e.target.value) || 0) })
-                        }
+                        onChange={(e) => updateSlot(selectedControl!.id, idx, { vel: clampMidi(Number(e.target.value) || 0) })}
                       />
                     </>
                   ) : null}
-                    <select
-                      style={styles.select}
-                    value={slotTargetId}
+                  <select
+                    style={styles.select}
+                    value={slot.targetDeviceId ?? ""}
                     onChange={(e) =>
-                      updateSlotWithValidation(idx, {
+                      updateSlot(selectedControl!.id, idx, {
                         targetDeviceId: e.target.value === "" ? null : e.target.value
-                        })
-                      }
-                    >
-                      <option value="">No target</option>
-                      {devices.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name || d.id}
-                        </option>
-                      ))}
-                    </select>
-                    <span style={styles.muted}>{deviceName}</span>
-                  </div>
-                  {slotWarning ? (
-                    <span style={{ color: "#fca5a5", fontSize: 12, marginLeft: 8 }}>{slotWarning}</span>
-                  ) : null}
+                      })
+                    }
+                  >
+                    <option value="">No target</option>
+                    {devices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name || d.id}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={styles.muted}>{deviceName}</span>
                 </div>
               );
             })}
@@ -2765,10 +2768,7 @@ function MappingPage({
                   </option>
                 ))}
               </select>
-              <button
-                style={styles.btnTiny}
-                onClick={() => selectedControl && updateSlotWithValidation(0, { enabled: false })}
-              >
+              <button style={styles.btnTiny} onClick={() => selectedControl && updateSlot(selectedControl.id, 0, { enabled: false })}>
                 Disable Slot 1
               </button>
             </div>
@@ -2782,43 +2782,17 @@ function MappingPage({
             </button>
             <div style={styles.row}>
               <span style={styles.muted}>Live send</span>
-              <button
-                style={styles.btnTiny}
-                disabled={!selectedControl}
-                onClick={() => selectedControl && nudgeControl((selectedControl.value ?? 0) - 8)}
-              >
+              <button style={styles.btnTiny} onClick={() => nudgeControl((selectedControl.value ?? 0) - 8)}>
                 -
               </button>
-              <button
-                style={styles.btnTiny}
-                disabled={!selectedControl}
-                onClick={() => selectedControl && nudgeControl((selectedControl.value ?? 0) + 8)}
-              >
+              <button style={styles.btnTiny} onClick={() => nudgeControl((selectedControl.value ?? 0) + 8)}>
                 +
               </button>
-              <span style={styles.muted}>Value: {selectedControl?.value ?? 0}</span>
+              <span style={styles.muted}>Value: {selectedControl.value}</span>
             </div>
           </div>
         </Panel>
       </div>
-      <MacroTargetEditor
-        open={showMacroEditor}
-        slots={selectedControl?.slots ?? []}
-        devices={devices}
-        onClose={() => setShowMacroEditor(false)}
-        onApply={(nextSlots) => {
-          nextSlots.forEach((slot, idx) => {
-            if (slot.kind !== "cc") return;
-            updateSlotWithValidation(idx, {
-              min: clampMidi(slot.min ?? 0),
-              max: clampMidi(slot.max ?? 127),
-              curve: (slot.curve as Curve) ?? "linear",
-              targetDeviceId: slot.targetDeviceId ?? null,
-              channel: slot.channel
-            });
-          });
-        }}
-      />
     </Page>
   );
 }
@@ -3080,7 +3054,7 @@ function MonitorPage({
   logCapReached,
   clearLog
 }: {
-  monitorRows: { _rowId: string; ts: number; src: MidiPortRef; label: string }[];
+  monitorRows: { _rowId: string; ts: number; src: MidiPortInfo; label: string }[];
   logCapReached: boolean;
   clearLog: () => void;
 }) {
@@ -3260,21 +3234,6 @@ function clampChannel(channel: number) {
 function clampMidi(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.min(Math.max(Math.round(value), 0), 127);
-}
-
-function resolveSlotChannel(slot: MappingSlot, devices: DeviceConfig[]) {
-  if (slot.kind === "empty") return 1;
-  const deviceChannel = slot.targetDeviceId
-    ? devices.find((d) => d.id === slot.targetDeviceId)?.channel
-    : undefined;
-  return clampChannel(slot.channel ?? deviceChannel ?? 1);
-}
-
-function slotConflictKey(slot: MappingSlot, devices: DeviceConfig[]) {
-  if (!slot.enabled || slot.kind !== "cc" || slot.cc == null) return null;
-  const channel = resolveSlotChannel(slot, devices);
-  const deviceId = slot.targetDeviceId ?? "default";
-  return `${deviceId}:${channel}:${slot.cc}`;
 }
 
 function describeFilter(filter?: RouteFilter): string {
