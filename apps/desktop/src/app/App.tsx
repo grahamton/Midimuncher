@@ -557,8 +557,8 @@ export function App() {
           const hasOut = route.toId && available.outputs.some((p) => p.id === route.toId);
           return {
             ...route,
-            fromId: hasIn ? route.fromId : defaultIn ?? route.fromId,
-            toId: hasOut ? route.toId : defaultOut ?? route.toId
+            fromId: hasIn ? route.fromId : route.fromId ? defaultIn ?? route.fromId : route.fromId,
+            toId: hasOut ? route.toId : route.toId ? defaultOut ?? route.toId : route.toId
           };
         })
       );
