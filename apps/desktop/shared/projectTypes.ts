@@ -16,6 +16,7 @@ export type DeviceConfig = {
 };
 
 export type AppView =
+  | "stage"
   | "setup"
   | "routes"
   | "mapping"
@@ -169,6 +170,7 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
 
   const view = rawState.activeView;
   const activeView: AppView =
+    view === "stage" ||
     view === "setup" ||
     view === "routes" ||
     view === "mapping" ||

@@ -3,6 +3,7 @@ export * from "./instruments/registry";
 export * from "./mapping/types";
 export * from "./mapping/curves";
 export * from "./mapping/engine";
+export * from "./midi/out";
 export * from "./routing/graph";
 export * from "./sequencers/types";
 export * from "./sequencers/runner";
