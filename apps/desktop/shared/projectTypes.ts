@@ -1,4 +1,5 @@
 import type { ControlElement } from "@midi-playground/core";
+import { coerceStageState, defaultStageState, type StageState } from "./stageTypes";
 import type { RouteConfig } from "./ipcTypes";
 
 export type SnapshotQuantize = "immediate" | "bar1" | "bar4";
@@ -21,6 +22,7 @@ export type AppView =
   | "mapping"
   | "monitor"
   | "help"
+  | "stage"
   | "snapshots"
   | "chains"
   | "settings"
@@ -43,6 +45,7 @@ export type ProjectStateV1 = {
   routes: RouteConfig[];
   controls: ControlElement[];
   selectedControlId: string | null;
+  stage: StageState;
   ui: {
     routeBuilder: {
       forceChannelEnabled: boolean;
@@ -90,6 +93,7 @@ export function defaultProjectState(): ProjectStateV1 {
     routes: [],
     controls: [],
     selectedControlId: null,
+    stage: defaultStageState(),
     ui: {
       routeBuilder: {
         forceChannelEnabled: true,
@@ -174,6 +178,7 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
     view === "mapping" ||
     view === "monitor" ||
     view === "help" ||
+    view === "stage" ||
     view === "snapshots" ||
     view === "chains" ||
     view === "settings" ||
@@ -215,6 +220,7 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
       routes: asArray<RouteConfig>(rawState.routes),
       controls: asArray<ControlElement>(rawState.controls),
       selectedControlId: asStringOrNull(rawState.selectedControlId),
+      stage: coerceStageState(rawState.stage, stateDefaults.stage),
       ui: {
         routeBuilder: {
           forceChannelEnabled: asBooleanOr((rawState.ui as any)?.routeBuilder?.forceChannelEnabled, stateDefaults.ui.routeBuilder.forceChannelEnabled),
@@ -256,3 +262,6 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV1 {
     }
   };
 }
+
+export type ProjectState = ProjectStateV1;
+export type ProjectDoc = ProjectDocV1;

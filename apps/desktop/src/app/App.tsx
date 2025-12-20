@@ -42,7 +42,10 @@ import type {
   SnapshotQuantize
 } from "../../shared/projectTypes";
 import { ControlLabPage } from "./ControlLabPage";
+import { StagePage } from "./StagePage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
+import { coerceStageSlice, resetStageSlice } from "../store/stageSlice";
+import type { StageState } from "../../shared/stageTypes";
 import { quantizeToMs } from "./lib/tempo";
 
 const LOG_LIMIT = 100;
@@ -452,6 +455,7 @@ export function App() {
   const clockBpmRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
+  const [stageState, setStageState] = useState<StageState>(defaults.stage);
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -513,6 +517,7 @@ export function App() {
         setSnapshotMode(state.snapshotMode ?? defaults.snapshotMode);
         setSnapshotFadeMs(state.snapshotFadeMs ?? defaults.snapshotFadeMs);
         setChainSteps(Array.isArray(state.chainSteps) && state.chainSteps.length ? state.chainSteps : defaults.chainSteps);
+        setStageState(coerceStageSlice(state.stage));
       }
 
       await refreshBackends();
@@ -675,6 +680,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
+      stage: stageState,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -728,6 +734,7 @@ export function App() {
     routes,
     controls,
     selectedControlId,
+    stageState,
     tempoBpm,
     useClockSync,
     followClockStart,
@@ -769,6 +776,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
+      stage: stageState,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -812,6 +820,7 @@ export function App() {
     routes,
     controls,
     selectedControlId,
+    stageState,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -897,6 +906,7 @@ export function App() {
     setRoutes(state.routes);
     setControls(state.controls);
     setSelectedControlId(state.selectedControlId ?? "knob-1");
+    setStageState(state.stage);
     setForceChannelEnabled(state.ui.routeBuilder.forceChannelEnabled);
     setRouteChannel(state.ui.routeBuilder.routeChannel);
     setAllowNotes(state.ui.routeBuilder.allowNotes);
@@ -1367,6 +1377,7 @@ export function App() {
       routes,
       controls,
       selectedControlId,
+      stage: stageState,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -1483,6 +1494,8 @@ export function App() {
             onRemoveChainStep={removeChainStep}
             onMoveChainStep={moveChainStep}
             onUpdateChainBars={updateChainBars}
+            stage={stageState}
+            onStageChange={setStageState}
           />
         </BodySplitPane>
         <BottomUtilityBar
@@ -1775,6 +1788,7 @@ function LeftNavRail({
   const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
     { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
+    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
     { id: "chains", label: "Chains", icon: <LinkIcon size={18} /> },
@@ -1861,6 +1875,8 @@ function MainContentArea(props: {
   onRemoveChainStep: (index: number) => void;
   onMoveChainStep: (from: number, to: number) => void;
   onUpdateChainBars: (index: number, bars: number) => void;
+  stage: StageState;
+  onStageChange: (next: StageState) => void;
   logCapReached: boolean;
   monitorRows: { _rowId: string; ts: number; src: MidiPortInfo; label: string }[];
   clearLog: () => void;
@@ -1929,6 +1945,8 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           devices={rest.devices}
         />
       );
+    case "stage":
+      return <StagePage stage={rest.stage} onChange={rest.onStageChange} />;
     case "snapshots":
       return (
         <SnapshotsPage
