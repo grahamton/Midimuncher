@@ -41,6 +41,7 @@ import type {
   SnapshotMode,
   SnapshotQuantize
 } from "../../shared/projectTypes";
+import { StagePage } from "./StagePage";
 import { ControlLabPage } from "./ControlLabPage";
 import { StagePage } from "./stage/StagePage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
@@ -1821,6 +1822,7 @@ function LeftNavRail({
   const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
     { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
+    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
     { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
@@ -2019,6 +2021,8 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           onEmitControl={(control, raw) => rest.onEmitControl?.(control, raw)}
         />
       );
+    case "stage":
+      return <StagePage />;
     case "settings":
       return (
         <SettingsPage
