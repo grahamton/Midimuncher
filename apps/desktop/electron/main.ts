@@ -3,7 +3,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { computeMappingSends } from "@midi-playground/core";
 import type { MidiEvent } from "@midi-playground/core";
 import type { MappingEmitPayload, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
-import type { ProjectStateV1 } from "../shared/projectTypes";
+import type { ProjectState } from "../shared/projectTypes";
 import type { BackendId } from "./backends/types";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";

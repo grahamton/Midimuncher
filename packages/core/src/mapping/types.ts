@@ -1,37 +1,43 @@
 export type Curve = "linear" | "expo" | "log";
 
+export type MappingSlotTarget = {
+  deviceId: string;
+  channel?: number;
+  cc?: number;
+};
+
+type MappingSlotBase = {
+  enabled: boolean;
+  broadcast?: boolean;
+  targets?: MappingSlotTarget[];
+  targetDeviceId?: string | null;
+};
+
 export type MappingSlot =
-  | {
-      enabled: boolean;
+  | (MappingSlotBase & {
       kind: "cc";
       cc: number;
       channel?: number;
       min: number;
       max: number;
       curve: Curve;
-      targetDeviceId: string | null;
-    }
-  | {
-      enabled: boolean;
+    })
+  | (MappingSlotBase & {
       kind: "pc";
       channel?: number;
       min: number;
       max: number;
       curve: Curve;
-      targetDeviceId: string | null;
-    }
-  | {
-      enabled: boolean;
+    })
+  | (MappingSlotBase & {
       kind: "note";
       note: number;
       channel?: number;
       vel: number;
-      targetDeviceId: string | null;
-    }
-  | {
-      enabled: boolean;
+    })
+  | (MappingSlotBase & {
       kind: "empty";
-    };
+    });
 
 export type ControlElementType = "knob" | "fader" | "button";
 
@@ -44,5 +50,11 @@ export type ControlElement = {
 };
 
 export function defaultSlots(): MappingSlot[] {
-  return Array.from({ length: 8 }, () => ({ enabled: false, kind: "empty" } as const));
+  return Array.from({ length: 8 }, () => ({
+    enabled: false,
+    kind: "empty",
+    targets: [],
+    broadcast: false,
+    targetDeviceId: null
+  } as const));
 }

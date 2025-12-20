@@ -94,13 +94,18 @@ function BindingList({ control }: { control: ControlElement }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {bindings.map((slot, idx) => {
+        const targetLabel = slot.broadcast
+          ? "Broadcast"
+          : slot.targets?.length
+            ? slot.targets.map((t) => t.deviceId).join(", ")
+            : slot.targetDeviceId ?? "no target";
         if (slot.kind === "cc") {
           return (
             <BindingRow
               key={idx}
               label={`CC ${slot.cc}`}
               detail={`ch ${slot.channel ?? "dev"} / ${slot.min}-${slot.max} / ${slot.curve}`}
-              target={slot.targetDeviceId}
+              target={targetLabel}
             />
           );
         }
@@ -110,7 +115,7 @@ function BindingList({ control }: { control: ControlElement }) {
               key={idx}
               label={`Program`}
               detail={`ch ${slot.channel ?? "dev"} / ${slot.min}-${slot.max} / ${slot.curve}`}
-              target={slot.targetDeviceId}
+              target={targetLabel}
             />
           );
         }
@@ -120,7 +125,7 @@ function BindingList({ control }: { control: ControlElement }) {
               key={idx}
               label={`Note ${slot.note}`}
               detail={`ch ${slot.channel ?? "dev"} / vel ${slot.vel}`}
-              target={slot.targetDeviceId}
+              target={targetLabel}
             />
           );
         }

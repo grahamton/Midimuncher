@@ -103,7 +103,12 @@ export function ControlLabPage() {
         </Card>
 
         <Card title="Step grid">
-          <StepGrid rows={4} cols={4} values={steps} onChange={setSteps} />
+          <StepGrid
+            rows={4}
+            cols={4}
+            values={steps}
+            onChange={(values) => setSteps(values.map((v) => (v ? 1 : 0) as 1 | 0))}
+          />
         </Card>
 
         <Card title="Macro multi-bind + rate limit">
