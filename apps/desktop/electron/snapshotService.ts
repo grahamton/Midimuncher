@@ -22,7 +22,7 @@ import type { MidiBridge } from "./midiBridge";
 import type { SessionLogger } from "./sessionLogger";
 
 type ClockSource = SnapshotSchedulePayload["clockSource"];
-type QuantizeKind = SnapshotSchedulePayload["quantize"];
+type QuantizeKind = NonNullable<SnapshotSchedulePayload["quantize"]>;
 
 type QueueItem = {
   id: number;
@@ -422,24 +422,7 @@ export class SnapshotService {
   }
 
   private computeDueTick(head: QueueItem): number {
-    const ticksPerBeat = this.ppqn;
-    const ticksPerBar = ticksPerBeat * 4;
-
-    const boundaryTicks = (() => {
-      if (head.strategy === "commit") return ticksPerBar * clampInt(head.cycleLengthBars, 1, 32);
-      switch (head.quantize) {
-        case "beat":
-          return ticksPerBeat;
-        case "bar":
-          return ticksPerBar;
-        case "bar4":
-          return ticksPerBar * 4;
-        default:
-          return 1;
-      }
-    })();
-
-    const safeBoundary = Math.max(1, boundaryTicks);
+    const safeBoundary = this.computeBoundaryTicks(head);
     const remainder = this.clockTickCount % safeBoundary;
     const ticksToNext = remainder === 0 ? 0 : safeBoundary - remainder;
     return this.clockTickCount + ticksToNext;
@@ -517,6 +500,17 @@ export class SnapshotService {
 
   private emitQueueStatus() {
     const head = this.peekQueueHead();
+    const bpm = head?.clockSource === "oxi" ? this.clockBpm : head?.bpm ?? null;
+    const boundaryTicks = head && this.clockRunning && head.clockSource === "oxi" ? this.computeBoundaryTicks(head) : null;
+    const dueTick =
+      head && this.clockRunning && head.clockSource === "oxi" && this.armed?.itemId === head.id
+        ? this.armed.dueTick
+        : null;
+    const dueInMs =
+      dueTick != null && boundaryTicks != null && bpm && bpm > 0
+        ? Math.max(0, Math.round(((dueTick - this.clockTickCount) / (bpm * this.ppqn)) * 60000))
+        : null;
+
     const status: SnapshotQueueStatus = {
       queueLength: this.queue.length,
       executing: this.executingQueued,
@@ -525,8 +519,46 @@ export class SnapshotService {
       activeSnapshotName: head?.snapshotName ?? null,
       clockRunning: this.clockRunning,
       clockSource: head?.clockSource ?? "oxi",
+      head: head
+        ? {
+            strategy: head.strategy,
+            quantize: head.quantize,
+            cycleLengthBars: head.cycleLengthBars,
+          }
+        : null,
+      timing: head
+        ? {
+            tickCount: this.clockTickCount,
+            ppqn: this.ppqn,
+            bpm: bpm && bpm > 0 ? bpm : null,
+            boundaryTicks,
+            dueTick,
+            dueInMs,
+          }
+        : null,
     };
     this.onStatus?.(status);
+  }
+
+  private computeBoundaryTicks(head: QueueItem): number {
+    const ticksPerBeat = this.ppqn;
+    const ticksPerBar = ticksPerBeat * 4;
+
+    const boundaryTicks = (() => {
+      if (head.strategy === "commit") return ticksPerBar * clampInt(head.cycleLengthBars, 1, 32);
+      switch (head.quantize) {
+        case "beat":
+          return ticksPerBeat;
+        case "bar":
+          return ticksPerBar;
+        case "bar4":
+          return ticksPerBar * 4;
+        default:
+          return 1;
+      }
+    })();
+
+    return Math.max(1, boundaryTicks);
   }
 
   private planMacroRamp(

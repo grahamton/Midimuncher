@@ -55,6 +55,7 @@ describe("coerceProjectDoc", () => {
       id: "device-1",
       name: "Device 1",
       instrumentId: null,
+      lane: 1,
       inputId: null,
       outputId: null,
       channel: 16,

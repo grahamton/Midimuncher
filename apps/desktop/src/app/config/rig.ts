@@ -6,6 +6,7 @@ type RigDeviceDefinition = {
   id: string;
   name: string;
   instrumentId: string;
+  lane: number;
   channel: number;
   clockEnabled?: boolean;
 };
@@ -25,10 +26,10 @@ type RigControlDefinition = {
 };
 
 const RIG_DEVICES: RigDeviceDefinition[] = [
-  { id: "rig-monologue", name: "Monologue", instrumentId: "monologue", channel: 2 },
-  { id: "rig-microfreak", name: "MicroFreak", instrumentId: "microfreak", channel: 1 },
-  { id: "rig-pro-vs-mini", name: "PRO VS MINI", instrumentId: "pro_vs_mini", channel: 3 },
-  { id: "rig-digitakt", name: "Digitakt", instrumentId: "digitakt", channel: 10, clockEnabled: true }
+  { id: "rig-monologue", name: "Monologue", instrumentId: "monologue", lane: 1, channel: 2 },
+  { id: "rig-microfreak", name: "MicroFreak", instrumentId: "microfreak", lane: 2, channel: 1 },
+  { id: "rig-pro-vs-mini", name: "PRO VS MINI", instrumentId: "pro_vs_mini", lane: 3, channel: 3 },
+  { id: "rig-digitakt", name: "Digitakt", instrumentId: "digitakt", lane: 4, channel: 10, clockEnabled: true }
 ];
 
 export const RIG_ROUTES: RigRouteDefinition[] = [

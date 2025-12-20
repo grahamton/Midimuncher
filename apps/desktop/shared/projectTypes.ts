@@ -14,10 +14,13 @@ export type SnapshotMode = SnapshotRecallStrategy;
 export type SnapshotQuantize = "immediate" | "bar1" | "bar4";
 export type SnapshotClockSource = "oxi" | "internal";
 
+const MAX_DEVICES = 8;
+
 export type DeviceConfig = {
   id: string;
   name: string;
   instrumentId: string | null;
+  lane: number;
   inputId: string | null;
   outputId: string | null;
   channel: number;
@@ -759,6 +762,7 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     id: typeof d.id === "string" ? d.id : `device-${idx + 1}`,
     name: typeof d.name === "string" ? d.name : `Device ${idx + 1}`,
     instrumentId: asStringOrNull(d.instrumentId),
+    lane: Math.min(Math.max(Math.round(asNumberOr(d.lane, idx + 1)), 1), MAX_DEVICES),
     inputId: asStringOrNull(d.inputId),
     outputId: asStringOrNull(d.outputId),
     channel: Math.min(Math.max(Math.round(asNumberOr(d.channel, 1)), 1), 16),

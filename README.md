@@ -25,7 +25,7 @@ Current desktop app highlights
 - Mapping v1: virtual controls (8 slots) with curves/ranges + MIDI Learn (CC), Program Change + Note slots; inline slot editor now has enable toggles, device pickers, curve/min/max, and a macro multi-bind shortcut
 - Surfaces board: live fader/knob/button cards wired to mapping emit; Surfaces Lab demos macro multi-bind with rate limiting and per-target curves
 - Snapshots: 20x20 banks, Jump/Commit at cycle boundaries, burst-limited recall, queue + flush, clock source selection (OXI default) and cycle bars (1–32)
-- Stage: scene launcher with Launch (quantized) and Drop (commit + optional macro ramp)
+- Stage: scene launcher with Launch (quantized) and Drop (commit + optional macro ramp); rig strips map explicitly to OXI lanes 1–4 via per-device lane numbers (no MIDI OUT required on instruments)
 - Persistence: saved project state (devices/routes/mapping) under Electron userData
 - Diagnostics card (sends test note), monitor view, manual ping (note/CC), outgoing messages visible in Monitor
 

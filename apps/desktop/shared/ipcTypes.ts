@@ -103,6 +103,19 @@ export type SnapshotQueueStatus = {
   activeSnapshotName: string | null;
   clockRunning: boolean;
   clockSource: SnapshotClockSource;
+  head?: {
+    strategy: SnapshotRecallStrategy;
+    quantize: SnapshotQuantizeKind;
+    cycleLengthBars: number;
+  } | null;
+  timing?: {
+    tickCount: number;
+    ppqn: number;
+    bpm: number | null;
+    boundaryTicks: number | null;
+    dueTick: number | null;
+    dueInMs: number | null;
+  } | null;
 };
 
 export type SnapshotCapturePayload = {

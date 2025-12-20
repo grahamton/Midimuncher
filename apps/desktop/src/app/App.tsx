@@ -1290,6 +1290,7 @@ export function App() {
         id: `device-${Date.now().toString(36)}-${nextIndex}`,
         name: `Device ${nextIndex}`,
         instrumentId: null,
+        lane: nextIndex,
         inputId: ports.inputs[0]?.id ?? null,
         outputId: ports.outputs[0]?.id ?? null,
         channel: 1,
@@ -1299,9 +1300,22 @@ export function App() {
   }
 
   function updateDevice(id: string, partial: Partial<DeviceConfig>) {
-    setDevices((current) =>
-      current.map((d) => (d.id === id ? { ...d, ...partial } : d))
-    );
+    setDevices((current) => {
+      const next = current.map((d) => (d.id === id ? { ...d, ...partial } : d));
+      if (typeof partial.lane !== "number") return next;
+      const lane = Math.min(MAX_DEVICES, Math.max(1, Math.round(partial.lane)));
+      const idx = next.findIndex((d) => d.id === id);
+      if (idx < 0) return next;
+      const otherIdx = next.findIndex((d) => d.id !== id && d.lane === lane);
+      if (otherIdx < 0) {
+        next[idx] = { ...next[idx]!, lane };
+        return next;
+      }
+      const currentLane = next[idx]!.lane;
+      next[idx] = { ...next[idx]!, lane };
+      next[otherIdx] = { ...next[otherIdx]!, lane: currentLane };
+      return next;
+    });
   }
 
   function removeDevice(id: string) {
@@ -1501,6 +1515,17 @@ export function App() {
     await midiApi.send({
       portId: selectedOut,
       msg: { t: "cc", ch: 1, cc, val: 127 },
+    });
+  }
+
+  async function sendDeviceCc(deviceId: string, cc: number, val: number) {
+    if (!midiApi) return;
+    const device = devices.find((d) => d.id === deviceId);
+    if (!device?.outputId) return;
+    await midiApi.openOut(device.outputId);
+    await midiApi.send({
+      portId: device.outputId,
+      msg: { t: "cc", ch: clampChannel(device.channel), cc: clampMidi(cc), val: clampMidi(val) },
     });
   }
 
@@ -1796,6 +1821,7 @@ export function App() {
             ports={ports}
             clock={clock}
             devices={devices}
+            updateDevice={updateDevice}
             selectedIn={selectedIn}
             selectedOut={selectedOut}
             onSelectIn={setSelectedIn}
@@ -1845,6 +1871,7 @@ export function App() {
             activeSnapshotId={activeSnapshotId}
             onSelectSnapshot={triggerSnapshot}
             onDropSnapshot={dropSnapshot}
+            onStageSendCc={sendDeviceCc}
             stageDropControlId={stageDropControlId}
             onChangeStageDropControlId={setStageDropControlId}
             stageDropToValue={stageDropToValue}
@@ -2307,6 +2334,7 @@ function MainContentArea(props: {
   ports: MidiPorts;
   clock: BridgeClock;
   devices: DeviceConfig[];
+  updateDevice: (id: string, partial: Partial<DeviceConfig>) => void;
   selectedIn: string | null;
   selectedOut: string | null;
   onSelectIn: (id: string | null) => void;
@@ -2339,6 +2367,7 @@ function MainContentArea(props: {
     quantizeOverride?: SnapshotQuantizeKind
   ) => void;
   onDropSnapshot: (snapshotId: string) => void;
+  onStageSendCc: (deviceId: string, cc: number, val: number) => void;
   stageDropControlId: string | null;
   onChangeStageDropControlId: (id: string | null) => void;
   stageDropToValue: number;
@@ -2421,6 +2450,7 @@ function RouteOutlet({
           selectedOut={rest.selectedOut}
           onSelectIn={rest.onSelectIn}
           onSelectOut={rest.onSelectOut}
+          onUpdateDevice={rest.updateDevice}
           diagMessage={rest.diagMessage}
           diagRunning={rest.diagRunning}
           onRunDiagnostics={rest.onRunDiagnostics}
@@ -2492,6 +2522,7 @@ function RouteOutlet({
         return (
           <StagePage
             clock={rest.clock}
+            queueStatus={rest.snapshotQueueStatus}
             snapshots={snapshotNames}
             activeSnapshot={activeName}
             onSelectSnapshot={(name, quantize) => {
@@ -2502,6 +2533,8 @@ function RouteOutlet({
               const id = findSnapshotIdByName(name, rest.snapshots);
               if (id) rest.onDropSnapshot(id);
             }}
+            devices={rest.devices}
+            onSendCc={rest.onStageSendCc}
             dropMacroControls={macroControls}
             dropMacroControlId={rest.stageDropControlId}
             onChangeDropMacroControlId={rest.onChangeStageDropControlId}
@@ -2624,6 +2657,7 @@ function SetupPage({
   selectedOut,
   onSelectIn,
   onSelectOut,
+  onUpdateDevice,
   diagMessage,
   diagRunning,
   onRunDiagnostics,
@@ -2641,6 +2675,7 @@ function SetupPage({
   selectedOut: string | null;
   onSelectIn: (id: string | null) => void;
   onSelectOut: (id: string | null) => void;
+  onUpdateDevice: (id: string, partial: Partial<DeviceConfig>) => void;
   diagMessage: string | null;
   diagRunning: boolean;
   onRunDiagnostics: () => void;
@@ -2727,11 +2762,27 @@ function SetupPage({
           <div style={styles.table}>
             {devices.map((dev, idx) => (
               <div key={dev.id} style={styles.tableRow}>
-                <span style={styles.cellSmall}>OUT {idx + 1}</span>
+                <span style={styles.cellSmall}>Lane {dev.lane}</span>
+                <select
+                  style={styles.select}
+                  value={dev.lane}
+                  onChange={(e) =>
+                    onUpdateDevice(dev.id, {
+                      lane: Math.min(8, Math.max(1, Number(e.target.value) || 1)),
+                    })
+                  }
+                  title="OXI lane number (1–8) used for Stage strips."
+                >
+                  {Array.from({ length: 8 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      Lane {n}
+                    </option>
+                  ))}
+                </select>
                 <select
                   style={styles.selectWide}
                   value={dev.outputId ?? ""}
-                  onChange={(e) => onSelectOut(e.target.value)}
+                  onChange={(e) => onUpdateDevice(dev.id, { outputId: e.target.value || null })}
                 >
                   <option value="">Select output</option>
                   {ports.outputs.map((p) => (
