@@ -22,7 +22,7 @@ import {
   Trash2,
   Zap
 } from "lucide-react";
-import { defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
+import { buildPanicMessages, defaultSlots, getInstrumentProfile, INSTRUMENT_PROFILES } from "@midi-playground/core";
 import type { ControlElement, Curve, MappingSlot, MidiEvent, MidiMsg } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
@@ -42,10 +42,8 @@ import type {
   SnapshotQuantize
 } from "../../shared/projectTypes";
 import { ControlLabPage } from "./ControlLabPage";
-import { StagePage } from "./StagePage";
+import { StagePage } from "./stage/StagePage";
 import { SurfaceBoardPage } from "./SurfaceBoardPage";
-import { coerceStageSlice, resetStageSlice } from "../store/stageSlice";
-import type { StageState } from "../../shared/stageTypes";
 import { quantizeToMs } from "./lib/tempo";
 
 const LOG_LIMIT = 100;
@@ -53,6 +51,7 @@ const MAX_DEVICES = 8;
 const DIAG_NOTE = 60;
 const DIAG_CHANNEL = 1;
 const CLOCK_PPQN = 24;
+const PANIC_THROTTLE_MS = 750;
 
 const styles = {
   window: {
@@ -455,7 +454,6 @@ export function App() {
   const clockBpmRef = useRef<number | null>(null);
   const [controls, setControls] = useState<ControlElement[]>(() => defaultControls());
   const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
-  const [stageState, setStageState] = useState<StageState>(defaults.stage);
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -468,6 +466,7 @@ export function App() {
   const learnTargetRef = useRef<{ controlId: string; slotIndex: number } | null>(null);
   const [learnStatus, setLearnStatus] = useState<"idle" | "listening" | "captured" | "timeout">("idle");
   const learnTimerRef = useRef<number | null>(null);
+  const panicCooldownRef = useRef<number | null>(null);
 
   useEffect(() => {
     selectedInRef.current = selectedIn;
@@ -517,7 +516,6 @@ export function App() {
         setSnapshotMode(state.snapshotMode ?? defaults.snapshotMode);
         setSnapshotFadeMs(state.snapshotFadeMs ?? defaults.snapshotFadeMs);
         setChainSteps(Array.isArray(state.chainSteps) && state.chainSteps.length ? state.chainSteps : defaults.chainSteps);
-        setStageState(coerceStageSlice(state.stage));
       }
 
       await refreshBackends();
@@ -680,7 +678,6 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      stage: stageState,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -734,7 +731,6 @@ export function App() {
     routes,
     controls,
     selectedControlId,
-    stageState,
     tempoBpm,
     useClockSync,
     followClockStart,
@@ -776,7 +772,6 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      stage: stageState,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -820,7 +815,6 @@ export function App() {
     routes,
     controls,
     selectedControlId,
-    stageState,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -869,18 +863,60 @@ export function App() {
   }
 
   async function panicAll() {
-    if (!midiApi) return;
-    const panicSrc: MidiPortInfo = { id: "panic", name: "Panic", direction: "out" };
-    const ts = Date.now();
-    setLog((current) => [{ ts, src: panicSrc, msg: { t: "stop" } as MidiMsg }, ...current].slice(0, LOG_LIMIT));
-    const outs = ports.outputs;
-    for (const out of outs) {
-      for (let ch = 1; ch <= 16; ch++) {
-        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 123, val: 0 } });
-        await midiApi.send({ portId: out.id, msg: { t: "cc", ch, cc: 120, val: 0 } });
-      }
-      await midiApi.send({ portId: out.id, msg: { t: "stop" } });
+    if (!midiApi) {
+      console.warn("Panic requested but MIDI API is unavailable");
+      return;
     }
+
+    const now = Date.now();
+    const lastTs = panicCooldownRef.current ?? 0;
+    if (now - lastTs < PANIC_THROTTLE_MS) {
+      console.info("Panic suppressed by throttle", { deltaMs: now - lastTs });
+      return;
+    }
+    panicCooldownRef.current = now;
+
+    const portChannels = new Map<string, Set<number>>();
+    devices.forEach((device) => {
+      if (!device.outputId) return;
+      const bucket = portChannels.get(device.outputId) ?? new Set<number>();
+      bucket.add(clampChannel(device.channel));
+      portChannels.set(device.outputId, bucket);
+    });
+
+    if (!portChannels.size && selectedOut) {
+      portChannels.set(
+        selectedOut,
+        new Set(Array.from({ length: 16 }, (_, idx) => idx + 1))
+      );
+    }
+
+    const panicEvents: MidiEvent[] = [];
+    for (const [portId, channels] of portChannels.entries()) {
+      const targets = channels.size
+        ? Array.from(channels)
+        : Array.from({ length: 16 }, (_, idx) => idx + 1);
+      const msgs = buildPanicMessages(targets);
+      for (const msg of msgs) {
+        await midiApi.send({ portId, msg });
+        panicEvents.push({
+          ts: now,
+          src: { id: `panic:${portId}`, name: `Panic → ${portName(portId)}`, kind: "virtual" },
+          msg
+        });
+      }
+    }
+
+    if (panicEvents.length) {
+      setLog((current) => [...panicEvents, ...current].slice(0, LOG_LIMIT));
+    }
+    console.info("Panic dispatched", {
+      targets: Array.from(portChannels.entries()).map(([portId, ch]) => ({
+        portId,
+        channels: Array.from(ch)
+      })),
+      count: panicEvents.length
+    });
   }
 
   async function resetProject() {
@@ -906,7 +942,6 @@ export function App() {
     setRoutes(state.routes);
     setControls(state.controls);
     setSelectedControlId(state.selectedControlId ?? "knob-1");
-    setStageState(state.stage);
     setForceChannelEnabled(state.ui.routeBuilder.forceChannelEnabled);
     setRouteChannel(state.ui.routeBuilder.routeChannel);
     setAllowNotes(state.ui.routeBuilder.allowNotes);
@@ -1377,7 +1412,6 @@ export function App() {
       routes,
       controls,
       selectedControlId,
-      stage: stageState,
       ui: {
         routeBuilder: {
           forceChannelEnabled,
@@ -1473,6 +1507,7 @@ export function App() {
           onQuickProgram={(portId, ch, program) => sendQuickProgram(portId, ch, program)}
           onSendSnapshot={sendSnapshotNow}
           onAddDeviceRoutes={addDeviceRoutes}
+          onPanic={panicAll}
           updateControl={updateControl}
           onEmitControl={emitControl}
           snapshots={snapshots}
@@ -1494,8 +1529,6 @@ export function App() {
             onRemoveChainStep={removeChainStep}
             onMoveChainStep={moveChainStep}
             onUpdateChainBars={updateChainBars}
-            stage={stageState}
-            onStageChange={setStageState}
           />
         </BodySplitPane>
         <BottomUtilityBar
@@ -1786,9 +1819,9 @@ function LeftNavRail({
   onPanic: () => void;
 }) {
   const items: { id: NavRoute; label: string; icon: ReactNode }[] = [
+    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "setup", label: "Setup", icon: <Cpu size={18} /> },
     { id: "mapping", label: "Mapping", icon: <Layers size={18} /> },
-    { id: "stage", label: "Stage", icon: <Play size={18} /> },
     { id: "surfaces", label: "Surfaces Lab", icon: <Zap size={18} /> },
     { id: "snapshots", label: "Snapshots", icon: <Camera size={18} /> },
     { id: "chains", label: "Chains", icon: <LinkIcon size={18} /> },
@@ -1854,6 +1887,7 @@ function MainContentArea(props: {
   onQuickProgram: (portId: string | null, channel: number, program: number) => void;
   onSendSnapshot: () => void;
   onAddDeviceRoutes: () => void;
+  onPanic: () => void;
   updateControl?: (id: string, partial: Partial<ControlElement>) => void;
   onEmitControl?: (control: ControlElement, rawValue: number) => void;
   snapshots: string[];
@@ -1875,8 +1909,6 @@ function MainContentArea(props: {
   onRemoveChainStep: (index: number) => void;
   onMoveChainStep: (from: number, to: number) => void;
   onUpdateChainBars: (index: number, bars: number) => void;
-  stage: StageState;
-  onStageChange: (next: StageState) => void;
   logCapReached: boolean;
   monitorRows: { _rowId: string; ts: number; src: MidiPortInfo; label: string }[];
   clearLog: () => void;
@@ -1904,6 +1936,8 @@ function MainContentArea(props: {
 
 function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) {
   switch (route) {
+    case "stage":
+      return <StagePage devices={rest.devices} onPanic={rest.onPanic} />;
     case "setup":
       return (
         <SetupPage
@@ -1945,8 +1979,6 @@ function RouteOutlet({ route, ...rest }: Parameters<typeof MainContentArea>[0]) 
           devices={rest.devices}
         />
       );
-    case "stage":
-      return <StagePage stage={rest.stage} onChange={rest.onStageChange} />;
     case "snapshots":
       return (
         <SnapshotsPage
