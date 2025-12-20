@@ -58,6 +58,9 @@ describe("coerceProjectDoc", () => {
     assert.equal(dirty.state.tempoBpm, defaultProjectDoc().state.tempoBpm);
     assert.equal(dirty.state.snapshotQuantize, defaultProjectDoc().state.snapshotQuantize);
     assert.equal(dirty.state.snapshotMode, defaultProjectDoc().state.snapshotMode);
+    assert.equal(dirty.state.useClockSync, defaultProjectDoc().state.useClockSync);
+    assert.equal(dirty.state.followClockStart, defaultProjectDoc().state.followClockStart);
+    assert.equal(dirty.state.snapshotFadeMs, defaultProjectDoc().state.snapshotFadeMs);
     assert.equal(dirty.state.chainSteps.length, defaultProjectDoc().state.chainSteps.length);
   });
 });

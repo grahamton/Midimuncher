@@ -362,8 +362,3 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     return [];
   }
 }
-
-declare module "windows-midi-services" {
-  const value: any;
-  export = value;
-}

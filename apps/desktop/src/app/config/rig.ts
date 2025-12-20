@@ -1,4 +1,4 @@
-import { defaultSlots, type ControlElement, type MappingSlot } from "@midi-playground/core";
+import { defaultSlots, type ControlElement, type Curve, type MappingSlot } from "@midi-playground/core";
 import type { RouteConfig } from "../../../shared/ipcTypes";
 import type { DeviceConfig } from "../../../shared/projectTypes";
 
@@ -21,7 +21,7 @@ type RigControlDefinition = {
   label: string;
   type: ControlElement["type"];
   color?: string;
-  slot: { cc: number; deviceId: string; channel: number; min?: number; max?: number; curve?: MappingSlot["curve"] };
+  slot: { cc: number; deviceId: string; channel: number; min?: number; max?: number; curve?: Curve };
 };
 
 const RIG_DEVICES: RigDeviceDefinition[] = [
