@@ -18,6 +18,7 @@ export type DeviceConfig = {
 export type AppView =
   | "setup"
   | "routes"
+  | "stage"
   | "mapping"
   | "monitor"
   | "help"
