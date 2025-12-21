@@ -142,6 +142,41 @@ export const stageStyles: Record<string, CSSProperties> = {
     color: "#94a3b8",
     marginTop: 6,
     fontStyle: "italic"
+  },
+  morphPanel: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    border: "1px dashed #1f2937",
+    background: "#070c16"
+  },
+  morphSelectors: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    marginBottom: 8
+  },
+  morphLabel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    fontSize: 12,
+    color: "#cbd5e1"
+  },
+  morphSelect: {
+    background: "#0f172a",
+    color: "#e2e8f0",
+    borderRadius: 6,
+    border: "1px solid #1f2937",
+    padding: "6px 8px"
+  },
+  morphSlider: {
+    padding: "6px 0"
+  },
+  morphMeta: {
+    fontSize: 12,
+    color: "#94a3b8",
+    marginTop: 4
   }
 };
 

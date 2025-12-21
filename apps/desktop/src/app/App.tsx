@@ -2125,6 +2125,9 @@ function RouteOutlet({
           onQuickProgram={rest.onQuickProgram}
           onSendSnapshot={rest.onSendSnapshot}
           onAddDeviceRoutes={rest.onAddDeviceRoutes}
+          controls={rest.controls}
+          selectedControlId={rest.selectedControlId}
+          updateSlot={rest.updateSlot}
         />
       );
     case "mapping":
@@ -2299,6 +2302,9 @@ function SetupPage({
   onQuickProgram,
   onSendSnapshot,
   onAddDeviceRoutes,
+  controls,
+  selectedControlId,
+  updateSlot,
 }: {
   ports: MidiPorts;
   devices: DeviceConfig[];
@@ -2326,6 +2332,13 @@ function SetupPage({
   ) => void;
   onSendSnapshot: () => void;
   onAddDeviceRoutes: () => void;
+  controls: ControlElement[];
+  selectedControlId: string | null;
+  updateSlot: (
+    controlId: string,
+    slotIndex: number,
+    partial: Partial<MappingSlot>
+  ) => void;
 }) {
   const selectedInLabel = selectedIn
     ? formatPortLabel(
@@ -2549,19 +2562,22 @@ function SetupPage({
           </button>
         </Panel>
       </div>
-      <Panel title="Assignment wizard (stub)">
-        <AssignmentWizardStub
-          devices={devices}
-          styles={{
-            btnPrimary: styles.btnPrimary,
+        <Panel title="Assignment wizard (stub)">
+          <AssignmentWizardStub
+            devices={devices}
+            styles={{
+              btnPrimary: styles.btnPrimary,
             btnSecondary: styles.btnSecondary,
             muted: styles.muted,
             select: styles.select,
             inputNarrow: styles.inputNarrow,
           }}
-          onSetQuickCc={(cc) => setQuickCc(cc)}
-        />
-      </Panel>
+            controls={controls}
+            selectedControlId={selectedControlId}
+            updateSlot={updateSlot}
+            onSetQuickCc={(cc) => setQuickCc(cc)}
+          />
+        </Panel>
     </Page>
   );
 }

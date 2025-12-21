@@ -142,6 +142,7 @@ export function StagePage({
         transitionStatus={transition.status}
         transitionScene={currentTransitionScene}
         transitionQuantize={transitionQuantize}
+        snapshots={snapshots}
       />
 
       <StageSceneGrid

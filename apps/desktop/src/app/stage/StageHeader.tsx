@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import type { BridgeClock } from "../../services/midiBridge";
 import type { SnapshotQuantizeKind, SnapshotQueueStatus } from "../../../shared/ipcTypes";
+import { Crossfader } from "@midi-playground/ui";
 import { describePhase, type QuantizeKind } from "../lib/stage/transition";
 import { stageStyles } from "./styles";
 
@@ -18,6 +20,7 @@ type StageHeaderProps = {
   transitionStatus: "idle" | "armed" | "executing";
   transitionScene: string | null;
   transitionQuantize: QuantizeKind;
+  snapshots: string[];
 };
 
 export function StageHeader({
@@ -34,8 +37,18 @@ export function StageHeader({
   onChangeDropDurationMs,
   transitionStatus,
   transitionScene,
-  transitionQuantize
+  transitionQuantize,
+  snapshots
 }: StageHeaderProps) {
+  const [morphSource, setMorphSource] = useState<string | null>(snapshots[0] ?? null);
+  const [morphTarget, setMorphTarget] = useState<string | null>(
+    snapshots[1] ?? snapshots[0] ?? null
+  );
+  const [morphValue, setMorphValue] = useState(0.5);
+  useEffect(() => {
+    setMorphSource(snapshots[0] ?? null);
+    setMorphTarget(snapshots[1] ?? snapshots[0] ?? null);
+  }, [snapshots]);
   const phase = describePhase(clock);
   const statusBadge = (() => {
     switch (transitionStatus) {
@@ -100,6 +113,46 @@ export function StageHeader({
           <span style={stageStyles.meta}>
             {queueStatus?.timing?.dueInMs != null ? `Next in ~${Math.round(queueStatus.timing.dueInMs)}ms` : ""}
           </span>
+        </div>
+        <div style={stageStyles.morphPanel}>
+          <div style={stageStyles.morphSelectors}>
+            <label style={stageStyles.morphLabel}>
+              From
+              <select
+                style={stageStyles.morphSelect}
+                value={morphSource ?? ""}
+                onChange={(e) => setMorphSource(e.target.value || null)}
+              >
+                {snapshots.map((name) => (
+                  <option key={`from-${name}`} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={stageStyles.morphLabel}>
+              To
+              <select
+                style={stageStyles.morphSelect}
+                value={morphTarget ?? ""}
+                onChange={(e) => setMorphTarget(e.target.value || null)}
+              >
+                {snapshots.map((name) => (
+                  <option key={`to-${name}`} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div style={stageStyles.morphSlider}>
+            <Crossfader value={morphValue} onChange={setMorphValue} color="#f97316" />
+          </div>
+          <p style={stageStyles.morphMeta}>
+            {morphSource && morphTarget
+              ? `Morphing ${morphSource} → ${morphTarget} (${Math.round(morphValue * 100)}%)`
+              : "Select two scenes to preview morphs."}
+          </p>
         </div>
         <p style={stageStyles.experimental}>
           Stage morphing, macro ramps, and instrument rigs beyond lanes 1-4 are still experimental—expect tweaks before release.
