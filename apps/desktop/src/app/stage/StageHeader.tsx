@@ -155,7 +155,7 @@ export function StageHeader({
           </p>
         </div>
         <p style={stageStyles.experimental}>
-          Stage morphing, macro ramps, and instrument rigs beyond lanes 1-4 are still experimental—expect tweaks before release.
+          Morphing, macro ramps, and rig-aware instrument strips are live; use the controls above to preview Queue/Drop flow.
         </p>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
