@@ -57,5 +57,4 @@ Docs
 - docs/engineering.md
 
 Agent entrypoints
-- AGENT_BRIEF.md
-- CODEx_PROMPT.md
+- docs/agent-flow.md

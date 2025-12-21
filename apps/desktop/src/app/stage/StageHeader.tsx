@@ -1,7 +1,7 @@
 import type { BridgeClock } from "../../services/midiBridge";
 import type { SnapshotQuantizeKind, SnapshotQueueStatus } from "../../../shared/ipcTypes";
+import { describePhase, type QuantizeKind } from "../lib/stage/transition";
 import { stageStyles } from "./styles";
-import type { QuantizeKind } from "./lib/stage/transition";
 
 type StageHeaderProps = {
   clock: BridgeClock;
@@ -36,7 +36,7 @@ export function StageHeader({
   transitionScene,
   transitionQuantize
 }: StageHeaderProps) {
-  const phase = clock.phase ?? { phase: 0, bar: 1, beat: 1 };
+  const phase = describePhase(clock);
   const statusBadge = (() => {
     switch (transitionStatus) {
       case "armed":
@@ -101,6 +101,9 @@ export function StageHeader({
             {queueStatus?.timing?.dueInMs != null ? `Next in ~${Math.round(queueStatus.timing.dueInMs)}ms` : ""}
           </span>
         </div>
+        <p style={stageStyles.experimental}>
+          Stage morphing, macro ramps, and instrument rigs beyond lanes 1-4 are still experimental—expect tweaks before release.
+        </p>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {statusBadge}

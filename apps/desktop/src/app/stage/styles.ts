@@ -136,6 +136,13 @@ export const stageStyles: Record<string, CSSProperties> = {
     letterSpacing: "0.06em",
     color: "#cbd5e1"
   }
+  ,
+  experimental: {
+    fontSize: 12,
+    color: "#94a3b8",
+    marginTop: 6,
+    fontStyle: "italic"
+  }
 };
 
 export const stageColors = [
