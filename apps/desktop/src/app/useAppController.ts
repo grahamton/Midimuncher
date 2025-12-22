@@ -149,6 +149,9 @@ export function useAppController() {
   const [followClockStart, setFollowClockStart] = useState(
     defaults.followClockStart
   );
+  const [transportChannel, setTransportChannel] = useState(
+    defaults.ui?.routeBuilder?.transportChannel ?? 16
+  );
 
   // Modulation
   const [modulationState, setModulationState] = useState<ModulationEngineState>(
@@ -212,6 +215,31 @@ export function useAppController() {
   useEffect(() => {
     learnTargetRef.current = learnTarget;
   }, [learnTarget]);
+
+  // Auto-connect OXI
+  useEffect(() => {
+    if (loadingPorts) return;
+
+    // Naive heuristic: if we see an "OXI" device and nothing is selected, grab it.
+    // Checks for "OXI One" or just "OXI"
+    if (!selectedIn) {
+      const oxiIn = ports.inputs.find(
+        (p) =>
+          p.name.toLowerCase().includes("oxi one") ||
+          p.name.toLowerCase().includes("oxi single")
+      );
+      if (oxiIn) setSelectedIn(oxiIn.id);
+    }
+
+    if (!selectedOut) {
+      const oxiOut = ports.outputs.find(
+        (p) =>
+          p.name.toLowerCase().includes("oxi one") ||
+          p.name.toLowerCase().includes("oxi single")
+      );
+      if (oxiOut) setSelectedOut(oxiOut.id);
+    }
+  }, [ports, loadingPorts, selectedIn, selectedOut]);
 
   // -- Actions --
   async function refreshPorts() {
@@ -280,6 +308,7 @@ export function useAppController() {
         setAllowTransport(state.ui?.routeBuilder?.allowTransport ?? true);
         setAllowClock(state.ui?.routeBuilder?.allowClock ?? true);
         setClockDiv(state.ui?.routeBuilder?.clockDiv ?? 1);
+        setTransportChannel(state.ui?.routeBuilder?.transportChannel ?? 16);
         setNote(state.ui?.diagnostics?.note ?? 60);
         setCcValue(state.ui?.diagnostics?.ccValue ?? 64);
         setTempoBpm(state.tempoBpm ?? defaults.tempoBpm);
@@ -528,6 +557,7 @@ export function useAppController() {
           allowTransport,
           allowClock,
           clockDiv,
+          transportChannel,
         },
         diagnostics: { note, ccValue },
       },
@@ -580,7 +610,6 @@ export function useAppController() {
     stageDropToValue,
     stageDropDurationMs,
     stageDropStepMs,
-    stageDropStepMs,
     stageDropPerSendSpacingMs,
     snapshotsState,
     snapshotChains,
@@ -592,7 +621,6 @@ export function useAppController() {
     allowTransport,
     allowClock,
     clockDiv,
-    note,
     note,
     ccValue,
     modulationState,
@@ -646,7 +674,21 @@ export function useAppController() {
       // Calculate bars from ticks
       chainRunnerRef.current.tick(clock.tickCount / (clock.ppqn * 4));
     }
-  }, [clock.tickCount, snapshotChains.playing]);
+  }, [clock.tickCount, clock.ppqn, snapshotChains.playing]);
+
+  // Follow Clock Transport (Incoming)
+  useEffect(() => {
+    if (!followClockStart) return;
+
+    // When clock starts running (e.g. from external MIDI Start), start our sequencer
+    if (clock.running && !snapshotChains.playing) {
+      onStartChain();
+    }
+    // When clock stops (e.g. external MIDI Stop), stop our sequencer
+    else if (!clock.running && snapshotChains.playing) {
+      onStopChain();
+    }
+  }, [clock.running, followClockStart, snapshotChains.playing]);
 
   const onStartChain = () => {
     setSnapshotChains((prev) => ({ ...prev, playing: true }));
@@ -663,11 +705,21 @@ export function useAppController() {
   };
   const onOxiTransport = (cmd: "start" | "stop" | "record") => {
     if (!midiApi || !selectedOut) return;
+
+    // Send standard MIDI Realtime messages for broader compatibility
+    if (cmd === "start") {
+      void midiApi.send({ portId: selectedOut, msg: { t: "start" } });
+    } else if (cmd === "stop") {
+      void midiApi.send({ portId: selectedOut, msg: { t: "stop" } });
+    }
+
+    // Also send OXI-specific CCs if enabled on device
     const cc = cmd === "stop" ? 105 : cmd === "start" ? 106 : 107;
     void midiApi.send({
       portId: selectedOut,
       msg: { t: "cc", ch: 1, cc, val: 127 },
     });
+
     // Local feedback
     if (cmd === "start") onStartChain();
     if (cmd === "stop") onStopChain();
@@ -675,31 +727,85 @@ export function useAppController() {
 
   const onQuickOxiSetup = () => {
     if (!selectedIn || !selectedOut) return;
-    // Create 3 routes for OXI Split A/B/C
-    const newRoutes: RouteConfig[] = [
-      {
-        id: `oxi-a-${Date.now()}`,
-        fromId: selectedIn,
-        toId: selectedOut,
-        channelMode: "passthrough",
-        filter: { allowTypes: undefined },
-      },
-      {
-        id: `oxi-b-${Date.now() + 1}`,
-        fromId: selectedIn,
-        toId: selectedOut,
-        channelMode: "passthrough",
-        filter: { allowTypes: undefined },
-      },
-      {
-        id: `oxi-c-${Date.now() + 2}`,
-        fromId: selectedIn,
-        toId: selectedOut,
-        channelMode: "passthrough",
-        filter: { allowTypes: undefined },
-      },
-    ];
-    setRoutes((current) => [...current, ...newRoutes]);
+
+    setRoutes((current) => {
+      // Check if we already have OXI routes to prevent duplication/mess
+      const hasOxi = current.some((r) => r.id.startsWith("oxi-split-"));
+      if (hasOxi) {
+        return [
+          ...current.filter((r) => !r.id.startsWith("oxi-split-")),
+          {
+            id: "oxi-split-a",
+            fromId: selectedIn,
+            toId: selectedOut,
+            channelMode: "passthrough",
+            filter: { allowTypes: undefined, allowClock: true }, // Explicitly allow clock/transport
+          },
+          {
+            id: "oxi-split-b",
+            fromId: selectedIn,
+            toId: selectedOut,
+            channelMode: "passthrough",
+            filter: { allowTypes: undefined, allowClock: true },
+          },
+          {
+            id: "oxi-split-c",
+            fromId: selectedIn,
+            toId: selectedOut,
+            channelMode: "passthrough",
+            filter: { allowTypes: undefined, allowClock: true },
+          },
+        ];
+      }
+
+      // Append new ones
+      return [
+        ...current,
+        {
+          id: "oxi-split-a",
+          fromId: selectedIn,
+          toId: selectedOut,
+          channelMode: "passthrough",
+          filter: { allowTypes: undefined, allowClock: true },
+        },
+        {
+          id: "oxi-split-b",
+          fromId: selectedIn,
+          toId: selectedOut,
+          channelMode: "passthrough",
+          filter: { allowTypes: undefined, allowClock: true },
+        },
+        {
+          id: "oxi-split-c",
+          fromId: selectedIn,
+          toId: selectedOut,
+          channelMode: "passthrough",
+          filter: { allowTypes: undefined, allowClock: true },
+        },
+      ];
+    });
+  };
+
+  const onStandardOxiSetup = () => {
+    if (!selectedIn || !selectedOut) return;
+
+    setRoutes((current) => {
+      // Clean up any existing OXI routes (split or standard) to avoid conflicts
+      const clean = current.filter(
+        (r) => !r.id.startsWith("oxi-split-") && !r.id.startsWith("oxi-main")
+      );
+
+      return [
+        ...clean,
+        {
+          id: "oxi-main",
+          fromId: selectedIn,
+          toId: selectedOut,
+          channelMode: "passthrough",
+          filter: { allowTypes: undefined, allowClock: true }, // Host capability
+        },
+      ];
+    });
   };
 
   return {
@@ -756,6 +862,9 @@ export function useAppController() {
     onStopChain,
     onOxiTransport,
     onQuickOxiSetup,
+    onStandardOxiSetup,
+    transportChannel,
+    setTransportChannel,
     activeView,
     setActiveView,
     snapshotsState,

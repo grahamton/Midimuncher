@@ -153,6 +153,9 @@ export function App() {
     onStopChain,
     onOxiTransport,
     onQuickOxiSetup,
+    onStandardOxiSetup,
+    transportChannel,
+    setTransportChannel,
     controls,
     setControls,
     selectedControlId,
@@ -688,6 +691,29 @@ export function App() {
                 >
                   OXI REMOTE
                 </span>
+                {/* OXI Linked Badge */}
+                {(inputLabel.toLowerCase().includes("oxi") ||
+                  outputLabel.toLowerCase().includes("oxi")) && (
+                  <div
+                    style={{
+                      background: "rgba(34, 197, 94, 0.15)",
+                      color: "#4ade80",
+                      border: "1px solid rgba(34, 197, 94, 0.3)",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      marginLeft: 8,
+                      letterSpacing: 0.5,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                    title="OXI One connected and active"
+                  >
+                    <span>LINKED</span>
+                  </div>
+                )}
               </div>
             </div>
           }
@@ -786,6 +812,8 @@ export function App() {
               diagRunning={diagRunning}
               onRunDiagnostics={runDiagnostics}
               onQuickStart={quickStart}
+              onQuickOxiSetup={onQuickOxiSetup}
+              onStandardOxiSetup={onStandardOxiSetup}
               loadingPorts={loadingPorts}
               logCapReached={logCapReached}
               sessionStatus={sessionStatus}
@@ -818,7 +846,8 @@ export function App() {
               onStartChain={onStartChain}
               onStopChain={onStopChain}
               onOxiTransport={onOxiTransport}
-              onQuickOxiSetup={onQuickOxiSetup}
+              transportChannel={transportChannel}
+              setTransportChannel={setTransportChannel}
               onQuickCc={(
                 portId: string,
                 ch: number,

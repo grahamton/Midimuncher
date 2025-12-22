@@ -64,9 +64,9 @@ function createWindow() {
 
 // Enable Windows MIDI Services (WinRT MIDI API) for Bluetooth MIDI support
 // This allows Windows 10/11 to natively detect BLE-MIDI devices like the OXI One
-if (process.platform === "win32") {
-  app.commandLine.appendSwitch("use-winrt-midi-api", "enabled");
-}
+// if (process.platform === "win32") {
+//   app.commandLine.appendSwitch("use-winrt-midi-api", "enabled");
+// }
 
 app.whenReady().then(() => {
   app.setAppUserModelId("com.midimuncher.desktop");

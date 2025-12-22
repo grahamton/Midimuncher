@@ -165,6 +165,7 @@ export type ProjectStateV1 = {
       allowTransport: boolean;
       allowClock: boolean;
       clockDiv: number;
+      transportChannel: number;
     };
     diagnostics: {
       note: number;
@@ -374,6 +375,7 @@ function defaultProjectStateV1(): ProjectStateV1 {
         allowTransport: true,
         allowClock: true,
         clockDiv: 1,
+        transportChannel: 16,
       },
       diagnostics: {
         note: 60,

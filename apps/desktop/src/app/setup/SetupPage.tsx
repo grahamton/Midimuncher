@@ -16,6 +16,9 @@ type SetupPageProps = {
   selectedOut: string | null;
   onAddDevice?: () => void;
   onQuickOxiSetup?: () => void;
+  onStandardOxiSetup?: () => void;
+  transportChannel: number;
+  setTransportChannel: (ch: number) => void;
 };
 
 export function SetupPage({
@@ -28,6 +31,9 @@ export function SetupPage({
   selectedOut,
   onAddDevice,
   onQuickOxiSetup,
+  onStandardOxiSetup,
+  transportChannel,
+  setTransportChannel,
 }: SetupPageProps) {
   // Map devices to status format expected by panel
   // We don't track 'online' or 'lastActivity' in App state seemingly?
@@ -110,9 +116,14 @@ export function SetupPage({
                     borderBottom: "1px solid #1e242c",
                   }}
                 >
-                  <span style={{ fontSize: 13, color: "#94a3b8" }}>
-                    {item.label}
-                  </span>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <span style={{ fontSize: 13, color: "#94a3b8" }}>
+                      {item.label}
+                    </span>
+                    <span style={{ fontSize: 10, color: "#475569" }}>
+                      {item.help}
+                    </span>
+                  </div>
                   <span
                     style={{
                       fontSize: 13,
@@ -124,6 +135,50 @@ export function SetupPage({
                   </span>
                 </div>
               ))}
+              {/* Interactive Transport Channel Setting */}
+              <div
+                style={{
+                  ...styles.row,
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: "1px solid #1e242c",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <span style={{ fontSize: 13, color: "#94a3b8" }}>
+                    Transport Channel
+                  </span>
+                  <span style={{ fontSize: 10, color: "#475569" }}>
+                    Channel for Play/Stop/Rec CCs
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={transportChannel}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (!isNaN(val))
+                        setTransportChannel(Math.min(Math.max(val, 1), 16));
+                    }}
+                    style={{
+                      background: "#0f172a",
+                      border: "1px solid #334155",
+                      borderRadius: 4,
+                      color: "#e2e8f0",
+                      padding: "2px 8px",
+                      width: 50,
+                      textAlign: "center",
+                      fontSize: 13,
+                    }}
+                  />
+                  <span style={{ fontSize: 13, color: "#64748b" }}>
+                    Choose Ch
+                  </span>
+                </div>
+              </div>
             </div>
             <p style={{ ...styles.muted, fontSize: 12, marginTop: 8 }}>
               Check OXI Config &gt; MIDI for these settings. Midimuncher uses
@@ -159,17 +214,30 @@ export function SetupPage({
                 </p>
               </div>
             </div>
-            <button
-              style={{
-                ...styles.btnPrimary,
-                marginTop: 8,
-                alignSelf: "flex-start",
-              }}
-              onClick={onQuickOxiSetup}
-              disabled={!selectedOut}
-            >
-              🚀 OXI Quick Setup (Split/3 Ports)
-            </button>
+            <div style={{ ...styles.row, gap: 12, marginTop: 8 }}>
+              <button
+                style={{
+                  ...styles.btnPrimary,
+                  alignSelf: "flex-start",
+                }}
+                onClick={onQuickOxiSetup}
+                disabled={!selectedOut}
+                title="Creates 3 virtual ports (Split A/B/C)"
+              >
+                🚀 Quick Split Setup
+              </button>
+              <button
+                style={{
+                  ...styles.btnSecondary,
+                  alignSelf: "flex-start",
+                }}
+                onClick={onStandardOxiSetup}
+                disabled={!selectedOut}
+                title="Creates 1 master port (Standard)"
+              >
+                🎹 Standard Setup
+              </button>
+            </div>
           </div>
         </Panel>
 

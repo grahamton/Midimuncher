@@ -33,6 +33,9 @@ export function AppRouter(props: AppRouterProps) {
           selectedOut={props.selectedOut}
           onAddDevice={props.onAddDevice}
           onQuickOxiSetup={props.onQuickOxiSetup}
+          onStandardOxiSetup={props.onStandardOxiSetup}
+          transportChannel={props.transportChannel}
+          setTransportChannel={props.setTransportChannel}
         />
       );
     case "routes":

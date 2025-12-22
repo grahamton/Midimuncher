@@ -1,6 +1,11 @@
 import { EventEmitter } from "node:events";
 import type { MidiEvent, MidiMsg, MidiPortRef } from "@midi-playground/core";
-import type { MidiBackendInfo, MidiPorts, MidiSendPayload, RouteConfig } from "../shared/ipcTypes";
+import type {
+  MidiBackendInfo,
+  MidiPorts,
+  MidiSendPayload,
+  RouteConfig,
+} from "../shared/ipcTypes";
 import type { BackendId, MidiBackend, MidiPacket } from "./backends/types";
 import { WinmmBackend } from "./backends/winmmBackend";
 import { WindowsMidiServicesBackend } from "./backends/windowsMidiServicesBackend";
@@ -15,8 +20,14 @@ export class MidiBridge extends EventEmitter {
   private readonly transportDedup = new Map<string, number>();
   private readonly transportDedupWindowMs = 250;
 
-  private readonly portNames = new Map<string, string>();
-  private readonly backends: MidiBackend[] = [new WinmmBackend(), new WindowsMidiServicesBackend()];
+  private readonly portInfo = new Map<
+    string,
+    { name: string; kind: MidiPortRef["kind"] }
+  >();
+  private readonly backends: MidiBackend[] = [
+    new WinmmBackend(),
+    new WindowsMidiServicesBackend(),
+  ];
   private backend: MidiBackend = this.backends[0];
 
   constructor() {
@@ -34,15 +45,24 @@ export class MidiBridge extends EventEmitter {
     const results: MidiBackendInfo[] = [];
     for (const b of this.backends) {
       const available = await Promise.resolve(b.isAvailable());
-      results.push({ id: b.id, label: b.label, available, selected: b.id === currentId });
+      results.push({
+        id: b.id,
+        label: b.label,
+        available,
+        selected: b.id === currentId,
+      });
     }
     return results;
   }
 
   async listPorts(): Promise<MidiPorts> {
     const ports = await Promise.resolve(this.backend.listPorts());
-    ports.inputs.forEach((p) => this.portNames.set(p.id, p.name));
-    ports.outputs.forEach((p) => this.portNames.set(p.id, p.name));
+    ports.inputs.forEach((p) =>
+      this.portInfo.set(p.id, { name: p.name, kind: p.kind ?? "usb" })
+    );
+    ports.outputs.forEach((p) =>
+      this.portInfo.set(p.id, { name: p.name, kind: p.kind ?? "usb" })
+    );
     return ports;
   }
 
@@ -62,8 +82,12 @@ export class MidiBridge extends EventEmitter {
     if (ok) {
       const evt: MidiEvent = {
         ts: Date.now(),
-        src: { id: `out:${portId}`, name: `OUT → ${this.portNames.get(portId) ?? portId}`, kind: "virtual" },
-        msg
+        src: {
+          id: `out:${portId}`,
+          name: `OUT → ${this.portInfo.get(portId)?.name ?? portId}`,
+          kind: "virtual",
+        },
+        msg,
       };
       this.emit("midi", evt);
     }
@@ -107,7 +131,9 @@ export class MidiBridge extends EventEmitter {
     for (const route of this.activeRoutes) {
       if (evt.src.id !== route.fromId) continue;
       const msg =
-        route.channelMode === "force" && route.forceChannel ? applyChannel(evt.msg, route.forceChannel) : evt.msg;
+        route.channelMode === "force" && route.forceChannel
+          ? applyChannel(evt.msg, route.forceChannel)
+          : evt.msg;
       if (!passesFilter(msg, route, this.clockCounters)) continue;
       const signature = `${route.id}:${makeSignature(msg)}`;
       const lastSeen = this.recentEchoes.get(signature);
@@ -119,13 +145,25 @@ export class MidiBridge extends EventEmitter {
     }
   }
 
-  private markTransportSeen(portId: string, kind: "start" | "stop" | "continue", ts: number) {
+  private markTransportSeen(
+    portId: string,
+    kind: "start" | "stop" | "continue",
+    ts: number
+  ) {
     this.transportDedup.set(`${portId}:${kind}`, ts);
   }
 
-  private recentlySawTransport(portId: string, kind: "start" | "stop" | "continue", ts: number) {
+  private recentlySawTransport(
+    portId: string,
+    kind: "start" | "stop" | "continue",
+    ts: number
+  ) {
     const last = this.transportDedup.get(`${portId}:${kind}`);
-    return typeof last === "number" && ts - last >= 0 && ts - last < this.transportDedupWindowMs;
+    return (
+      typeof last === "number" &&
+      ts - last >= 0 &&
+      ts - last < this.transportDedupWindowMs
+    );
   }
 
   private handleBackendMidi = (packet: MidiPacket) => {
@@ -134,13 +172,23 @@ export class MidiBridge extends EventEmitter {
     const ts = Date.now();
     const evt: MidiEvent = {
       ts,
-      src: { id: packet.portId, name: this.portNames.get(packet.portId), kind: this.srcKind },
-      msg: midiMsg
+      src: {
+        id: packet.portId,
+        name: this.portInfo.get(packet.portId)?.name,
+        kind: this.portInfo.get(packet.portId)?.kind ?? this.srcKind,
+      },
+      msg: midiMsg,
     };
     this.emit("midi", evt);
-    void this.forwardRoute(evt).catch((err) => console.warn("Route forward failed", err));
+    void this.forwardRoute(evt).catch((err) =>
+      console.warn("Route forward failed", err)
+    );
 
-    if (midiMsg.t === "start" || midiMsg.t === "stop" || midiMsg.t === "continue") {
+    if (
+      midiMsg.t === "start" ||
+      midiMsg.t === "stop" ||
+      midiMsg.t === "continue"
+    ) {
       this.markTransportSeen(packet.portId, midiMsg.t, ts);
       return;
     }
@@ -152,8 +200,12 @@ export class MidiBridge extends EventEmitter {
     this.markTransportSeen(packet.portId, derived.t, ts);
     this.emit("midi", {
       ts,
-      src: { id: packet.portId, name: this.portNames.get(packet.portId), kind: this.srcKind },
-      msg: derived
+      src: {
+        id: packet.portId,
+        name: this.portInfo.get(packet.portId)?.name,
+        kind: this.portInfo.get(packet.portId)?.kind ?? this.srcKind,
+      },
+      msg: derived,
     });
   };
 }
@@ -168,7 +220,8 @@ function decodeMidiMessage(message: number[]): MidiMsg | null {
     case 0x80:
       return { t: "noteOff", ch: channel, note: data1, vel: data2 };
     case 0x90:
-      if (data2 === 0) return { t: "noteOff", ch: channel, note: data1, vel: 0 };
+      if (data2 === 0)
+        return { t: "noteOff", ch: channel, note: data1, vel: 0 };
       return { t: "noteOn", ch: channel, note: data1, vel: data2 };
     case 0xb0:
       return { t: "cc", ch: channel, cc: data1, val: data2 };
@@ -283,7 +336,11 @@ function makeSignature(msg: MidiMsg): string {
   }
 }
 
-function passesFilter(msg: MidiMsg, route: RouteConfig, clockCounters: Map<string, number>): boolean {
+function passesFilter(
+  msg: MidiMsg,
+  route: RouteConfig,
+  clockCounters: Map<string, number>
+): boolean {
   const filter = route.filter;
   if (filter?.allowTypes && !filter.allowTypes.includes(msg.t)) {
     return false;

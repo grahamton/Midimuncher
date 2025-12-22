@@ -105,6 +105,9 @@ export type AppRouterProps = {
   onStopChain: () => void;
   onOxiTransport: (cmd: "start" | "stop" | "record") => void;
   onQuickOxiSetup: () => void;
+  onStandardOxiSetup: () => void;
+  transportChannel: number;
+  setTransportChannel: (ch: number) => void;
   onAddDevice: () => void;
   modulationState: import("@midi-playground/core").ModulationEngineState;
   setModulationState: (
