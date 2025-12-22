@@ -596,167 +596,132 @@ export function App() {
     // JSX Return
     <div style={styles.window}>
       <AppChrome>
-        <TopStatusBar
-          actions={
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                width: "100%",
-                justifyContent: "center",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={styles.selectorGroup}>
-                  <label style={styles.selectorLabel}>Backend</label>
-                  <select
-                    style={styles.selector}
-                    value={selectedBackendId}
-                    onChange={(e) => selectBackend(e.target.value)}
-                  >
-                    {backends.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div style={styles.selectorGroup}>
-                  <label style={styles.selectorLabel}>Input</label>
-                  <select
-                    style={styles.selector}
-                    value={selectedIn ?? ""}
-                    onChange={(e) => setSelectedIn(e.target.value || null)}
-                  >
-                    <option value="">None</option>
-                    {ports.inputs.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {formatPortLabel(p.name)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div style={styles.selectorGroup}>
-                  <label style={styles.selectorLabel}>Output</label>
-                  <select
-                    style={styles.selector}
-                    value={selectedOut ?? ""}
-                    onChange={(e) => setSelectedOut(e.target.value || null)}
-                  >
-                    <option value="">None</option>
-                    {ports.outputs.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {formatPortLabel(p.name)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ ...styles.row, gap: 4 }}>
-                <button
-                  style={styles.btnTiny}
-                  onClick={() => onOxiTransport("stop")}
-                  title="OXI Stop"
-                >
-                  <div style={{ width: 8, height: 8, background: "#ef4444" }} />
-                </button>
-                <button
-                  style={{ ...styles.btnTiny, background: "#10b981" }}
-                  onClick={() => onOxiTransport("start")}
-                  title="OXI Play"
-                >
-                  <Play size={10} fill="white" />
-                </button>
-                <button
-                  style={{ ...styles.btnTiny, borderRadius: "50%" }}
-                  onClick={() => onOxiTransport("record")}
-                  title="OXI Record"
-                >
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "#ef4444",
-                    }}
-                  />
-                </button>
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: 800,
-                    color: "#64748b",
-                    marginLeft: 4,
-                  }}
-                >
-                  OXI REMOTE
-                </span>
-                {/* OXI Linked Badge */}
-                {(inputLabel.toLowerCase().includes("oxi") ||
-                  outputLabel.toLowerCase().includes("oxi")) && (
-                  <div
-                    style={{
-                      background: "rgba(34, 197, 94, 0.15)",
-                      color: "#4ade80",
-                      border: "1px solid rgba(34, 197, 94, 0.3)",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      marginLeft: 8,
-                      letterSpacing: 0.5,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                    title="OXI One connected and active"
-                  >
-                    <span>LINKED</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          }
-          saveLabel={
-            saveStatus === "saving"
-              ? "Saving..."
-              : saveStatus === "saved"
-              ? "Saved"
-              : saveStatus === "error"
-              ? "Error"
-              : "Idle"
-          }
-          lastSavedAt={lastSavedAt}
-          onRefresh={refreshPorts}
-          onReset={() => {
-            if (confirm("Reset?")) {
-              /* hook doesn't expose reset, maybe add later? */ window.location.reload();
-            }
-          }}
-          onSave={flushProjectNow}
-          midiReady={Boolean(midiApi)}
-          loadingPorts={loadingPorts}
-          tempo={(useClockSync && clockBpm) || tempoBpm || 120}
-          onTempoChange={(bpm: number) => {
-            setTempoBpm(bpm);
-            if (useClockSync) setUseClockSync(false);
-          }}
-          clockBpm={clockBpm}
-          useClockSync={useClockSync}
-          clockStale={clockStale}
-          onRelinkClock={relinkClock}
-          onToggleClockSync={setUseClockSync}
-          followClockStart={followClockStart}
-          onToggleFollowClockStart={setFollowClockStart}
-          backendLabel={backendLabel}
-          inputLabel={inputLabel}
-          outputLabel={outputLabel}
-        />
-
         {activeView !== "stage" && (
           <TopStatusBar
+            actions={
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  justifyContent: "center",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={styles.selectorGroup}>
+                    <label style={styles.selectorLabel}>Backend</label>
+                    <select
+                      style={styles.selector}
+                      value={selectedBackendId}
+                      onChange={(e) => selectBackend(e.target.value)}
+                    >
+                      {backends.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={styles.selectorGroup}>
+                    <label style={styles.selectorLabel}>Input</label>
+                    <select
+                      style={styles.selector}
+                      value={selectedIn ?? ""}
+                      onChange={(e) => setSelectedIn(e.target.value || null)}
+                    >
+                      <option value="">None</option>
+                      {ports.inputs.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {formatPortLabel(p.name)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={styles.selectorGroup}>
+                    <label style={styles.selectorLabel}>Output</label>
+                    <select
+                      style={styles.selector}
+                      value={selectedOut ?? ""}
+                      onChange={(e) => setSelectedOut(e.target.value || null)}
+                    >
+                      <option value="">None</option>
+                      {ports.outputs.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {formatPortLabel(p.name)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ ...styles.row, gap: 4 }}>
+                  <button
+                    style={styles.btnTiny}
+                    onClick={() => onOxiTransport("stop")}
+                    title="OXI Stop"
+                  >
+                    <div
+                      style={{ width: 8, height: 8, background: "#ef4444" }}
+                    />
+                  </button>
+                  <button
+                    style={{ ...styles.btnTiny, background: "#10b981" }}
+                    onClick={() => onOxiTransport("start")}
+                    title="OXI Play"
+                  >
+                    <Play size={10} fill="white" />
+                  </button>
+                  <button
+                    style={{ ...styles.btnTiny, borderRadius: "50%" }}
+                    onClick={() => onOxiTransport("record")}
+                    title="OXI Record"
+                  >
+                    <div
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "#ef4444",
+                      }}
+                    />
+                  </button>
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      color: "#64748b",
+                      marginLeft: 4,
+                    }}
+                  >
+                    OXI REMOTE
+                  </span>
+                  {/* OXI Linked Badge */}
+                  {(inputLabel.toLowerCase().includes("oxi") ||
+                    outputLabel.toLowerCase().includes("oxi")) && (
+                    <div
+                      style={{
+                        background: "rgba(34, 197, 94, 0.15)",
+                        color: "#4ade80",
+                        border: "1px solid rgba(34, 197, 94, 0.3)",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        marginLeft: 8,
+                        letterSpacing: 0.5,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      title="OXI One connected and active"
+                    >
+                      <span>LINKED</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            }
             loadingPorts={loadingPorts}
             tempo={(useClockSync && clockBpm) || tempoBpm || 120}
             onTempoChange={(bpm: number) => {

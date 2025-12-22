@@ -248,6 +248,21 @@ export function useAppController() {
     learnTargetRef.current = learnTarget;
   }, [learnTarget]);
 
+  // Helper to fetch current hardware values (CC Request)
+  // This is called when loading a snapshot to sync ghost faders
+  const syncHardwareValues = () => {
+    // For Phase 10 MVP: Unlatch all hardware states to force soft pickup
+    setHardwareState((prev) => {
+      const next: Record<string, { value: number; latched: boolean }> = {};
+      Object.keys(prev).forEach((k) => {
+        if (prev[k]) {
+          next[k] = { ...prev[k]!, latched: false };
+        }
+      });
+      return next;
+    });
+  };
+
   // Helper to emit control changes (send MIDI)
   const onEmitControl = (control: ControlElement, value: number) => {
     // Send to mapped target
@@ -618,6 +633,8 @@ export function useAppController() {
       setSnapshotQueueStatus(status);
       if (status.activeSnapshotId) {
         setPendingSnapshotId(status.activeSnapshotId);
+        // New Snapshot Loaded: Sync Hardware (Unlatch all to force soft pickup)
+        syncHardwareValues();
       } else if (status.queueLength === 0) {
         setPendingSnapshotId(null);
       }
