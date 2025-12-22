@@ -1051,5 +1051,6 @@ export function useAppController() {
     modulationState,
     setModulationState,
     hardwareState, // Export for UI
+    instrumentLibrary,
   };
 }

@@ -765,14 +765,20 @@ export function App() {
             }}
             clockBpm={clockBpm}
             useClockSync={useClockSync}
-            clockStale={clockStale}
             onRelinkClock={relinkClock}
             onToggleClockSync={setUseClockSync}
             followClockStart={followClockStart}
             onToggleFollowClockStart={setFollowClockStart}
-            backendLabel={backendLabel}
-            inputLabel={inputLabel}
-            outputLabel={outputLabel}
+            midiReady={!!midiApi}
+            saveLabel={
+              saveStatus === "saving"
+                ? "Saving..."
+                : saveStatus === "saved"
+                ? "Saved"
+                : saveStatus === "error"
+                ? "Error"
+                : ""
+            }
           />
         )}
 
