@@ -68,7 +68,23 @@ Status vs goals: Phase 0–7 shipped; Phase 8 (Grid/DAW) and further refinement 
   - OXI Remote Transport controls added to the Top Bar for hardware playback sync.
 
 - **Phase 8 - Grid/DAW (optional)**
+
   - Grid view for notes/clip launch; Ableton/Bitwig templates after core perf features are solid.
+
+- **Phase 9 - Instrument Library & Ecosystem (Planned)**
+
+  - **Instrument Definition Schema**: Define a robust JSON format (`.mididef.json`) for hardware profiles (CCs, NRPNs, Ranges), moving away from hardcoded TypeScript.
+  - **Local Library**: App scans `%USERPROFILE%/.midimuncher/instruments` for user-defined profiles.
+  - **Community Sync**: Integration with external repositories (e.g., `pencilresearch/midi` or "midd.cc" concept) to fetch/import definitions.
+    - Adapter to convert CSV/YAML from community sources into app-native JSON.
+  - **Smart Mapping**: Auto-map controls based on profile tags (e.g., "Cutoff" -> Macro 1) and visualization of parameter ranges.
+
+- **Phase 10 - Performance & Expression ("The Instrument Layer") (Planned)**
+  - **Live Surface**: Touch-friendly XY Pads, Physics-based faders (friction/inertia), and "Performance Buttons" (Hold/Toggle/Momentary).
+  - **Gesture Looper**: Record knob movements and loop them as automation curves in real-time.
+  - **Generative Inserts**: Midi FX slots per route (Arpeggiator, Chorder, Scale Quantizer, Euclidean Gate) to transform simple inputs into complex musical phrases.
+  - **Visualizers**: Reactive audio/midi visualizations (Spectrum, Oscilloscope) to give the app a "pulse".
+  - **Global Macros**: A dedicated "Master Control" view with 8-12 vital parameters gathered from across the rig (e.g., "All Filters Cutoff").
 
 ## Engineering backlog
 
