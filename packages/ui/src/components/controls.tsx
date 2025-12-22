@@ -464,6 +464,7 @@ export function StepGrid({
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gridTemplateRows: `repeat(${rows}, 1fr)`,
         gap: 6,
         background: "#0b1220",
         padding: 8,
@@ -480,7 +481,9 @@ export function StepGrid({
             key={idx}
             onClick={() => handleToggle(idx)}
             style={{
-              aspectRatio: "1 / 1",
+              width: "100%",
+              height: "100%",
+              minHeight: 32, // preserve usability
               borderRadius: 8,
               border: `1px solid ${active ? color : "#1f2937"}`,
               background: active ? `${color}22` : "#0f172a",

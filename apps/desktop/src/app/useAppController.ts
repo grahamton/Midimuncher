@@ -6,7 +6,6 @@ import {
   type MidiEvent,
   type MidiMsg,
   type MidiPortRef,
-  type SnapshotQuantizeKind,
 } from "@midi-playground/core";
 import type {
   MidiBackendInfo,
@@ -15,6 +14,7 @@ import type {
   SessionLogStatus,
   SnapshotClockSource,
   SnapshotQueueStatus,
+  SnapshotQuantizeKind,
 } from "../../shared/ipcTypes";
 import {
   defaultProjectState,
@@ -154,7 +154,9 @@ export function useAppController() {
   const [controls, setControls] = useState<ControlElement[]>(() =>
     defaultControls()
   );
-  const [selectedControlId, setSelectedControlId] = useState<string>("knob-1");
+  const [selectedControlId, setSelectedControlId] = useState<string | null>(
+    "knob-1"
+  );
   const [projectHydrated, setProjectHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -614,6 +616,7 @@ export function useAppController() {
     note,
     setNote,
     loadingPorts,
+    setLoadingPorts,
     routes,
     setRoutes,
     forceChannelEnabled,

@@ -5,7 +5,6 @@ import type {
   MidiEvent,
   MidiMsg,
   MidiPortRef,
-  SnapshotQuantizeKind,
 } from "@midi-playground/core";
 import {
   AppChrome,
@@ -25,13 +24,18 @@ import type {
   SnapshotQueueStatus,
   SnapshotSchedulePayload,
   SnapshotDropBundlePayload,
+  SnapshotQuantizeKind,
 } from "../../shared/ipcTypes";
 import {
   defaultProjectState,
+  defaultSnapshotsState,
   type AppView,
-  type ChainStep,
   type DeviceConfig,
+  type ProjectState,
+  type SnapshotQuantize,
+  type SnapshotMode,
 } from "../../shared/projectTypes";
+import { AppRouter } from "./AppRouter";
 import {
   findSnapshotSlot,
   findSnapshotIdByName,
@@ -701,7 +705,7 @@ export function App() {
           midiReady={Boolean(midiApi)}
           loadingPorts={loadingPorts}
           tempo={(useClockSync && clockBpm) || tempoBpm || 120}
-          onTempoChange={(bpm) => {
+          onTempoChange={(bpm: number) => {
             setTempoBpm(bpm);
             if (useClockSync) setUseClockSync(false);
           }}
@@ -719,7 +723,7 @@ export function App() {
         <BodySplitPane>
           <LeftNavRail
             route={activeView}
-            onChangeRoute={(next) => setActiveView(next)}
+            onChangeRoute={(next: AppView) => setActiveView(next)}
             onPanic={async () => {
               // Panic logic needs port access, easiest to implement here
               if (!midiApi) return;
@@ -736,137 +740,153 @@ export function App() {
               });
             }}
           />
-          <MainContentArea
-            route={activeView}
-            ports={ports}
-            clock={clock}
-            devices={devices}
-            updateDevice={updateDevice}
-            selectedIn={selectedIn}
-            selectedOut={selectedOut}
-            onSelectIn={setSelectedIn}
-            onSelectOut={setSelectedOut}
-            diagMessage={diagMessage}
-            diagRunning={diagRunning}
-            onRunDiagnostics={runDiagnostics}
-            onQuickStart={quickStart}
-            loadingPorts={loadingPorts}
-            logCapReached={logCapReached}
-            sessionStatus={sessionStatus}
-            onSessionStart={startSessionRecording}
-            onSessionStop={stopSessionRecording}
-            onSessionReveal={revealSessionLog}
-            monitorRows={activity.slice(0, 12)}
-            clearLog={clearLog}
-            controls={controls}
-            selectedControl={selectedControl}
-            selectedControlId={selectedControlId}
-            setSelectedControlId={setSelectedControlId}
-            updateSlot={updateSlot}
-            learnStatus={learnStatus}
-            onLearn={(slotIndex) =>
-              selectedControl && startLearn(selectedControl.id, slotIndex)
-            }
-            onCancelLearn={cancelLearn}
-            note={note}
-            ccValue={ccValue}
-            onSendNote={sendTestNote}
-            onSendCc={sendCc}
-            onQuickTest={(portId, ch) => sendQuickNote(portId, ch, note)}
-            onQuickCc={(portId, ch, ccNum, val) =>
-              sendQuickCc(portId, ch, ccNum, val)
-            }
-            onQuickProgram={(portId, ch, program) =>
-              sendQuickProgram(portId, ch, program)
-            }
-            onSendSnapshot={() => {
-              if (!activeSnapshotId) return;
-              setPendingSnapshotId(activeSnapshotId);
-              void scheduleSnapshot(activeSnapshotId);
-            }}
-            onAddDeviceRoutes={addDeviceRoutes}
-            updateControl={updateControl}
-            onEmitControl={emitControl}
-            snapshots={snapshotsState}
-            activeSnapshotId={activeSnapshotId}
-            onSelectSnapshot={triggerSnapshot}
-            onDropSnapshot={dropSnapshot}
-            onStageSendCc={sendDeviceCc}
-            stageDropControlId={stageDropControlId}
-            onChangeStageDropControlId={setStageDropControlId}
-            stageDropToValue={stageDropToValue}
-            onChangeStageDropToValue={(value) =>
-              setStageDropToValue(Math.min(Math.max(Math.round(value), 0), 127))
-            }
-            stageDropDurationMs={stageDropDurationMs}
-            onChangeStageDropDurationMs={(ms) =>
-              setStageDropDurationMs(
-                Math.min(Math.max(Math.round(ms), 0), 60_000)
-              )
-            }
-            pendingSnapshotId={pendingSnapshotId}
-            snapshotQueueStatus={snapshotQueueStatus}
-            onCaptureSnapshot={(snapshotId) => {
-              if (!midiApi) return;
-              const effectiveBpm =
-                useClockSync && clockBpm ? clockBpm : tempoBpm;
-              void midiApi
-                .captureSnapshot({
-                  bpm: effectiveBpm,
-                  notes: snapshotsState.captureNotes,
-                })
-                .then((snapshot) => {
-                  setSnapshotsState((current) =>
-                    writeSnapshotToSlot(current, snapshotId, snapshot)
-                  );
-                });
-            }}
-            onCancelPendingSnapshot={() => {
-              setPendingSnapshotId(null);
-              void midiApi?.flushSnapshotQueue();
-            }}
-            onChangeSnapshotBank={(bankId) =>
-              setSnapshotsState((current) => ({
-                ...current,
-                activeBankId: bankId,
-              }))
-            }
-            snapshotQuantize={snapshotQuantize}
-            snapshotMode={snapshotsState.strategy}
-            onChangeSnapshotQuantize={setSnapshotQuantize}
-            onChangeSnapshotMode={(mode) => {
-              setSnapshotMode(mode);
-              setSnapshotsState((current) => ({ ...current, strategy: mode }));
-            }}
-            snapshotFadeMs={snapshotsState.fadeMs}
-            onChangeSnapshotFade={(ms) => {
-              const next = Math.max(0, ms);
-              setSnapshotFadeMs(next);
-              setSnapshotsState((current) => ({ ...current, fadeMs: next }));
-            }}
-            snapshotCommitDelayMs={snapshotsState.commitDelayMs}
-            onChangeSnapshotCommitDelay={(ms) =>
-              setSnapshotsState((current) => ({
-                ...current,
-                commitDelayMs: Math.max(0, Math.round(ms)),
-              }))
-            }
-            snapshotClockSource={snapshotClockSource}
-            onChangeSnapshotClockSource={setSnapshotClockSource}
-            snapshotCycleBars={snapshotCycleBars}
-            onChangeSnapshotCycleBars={(bars) =>
-              setSnapshotCycleBars(Math.min(Math.max(Math.round(bars), 1), 32))
-            }
-            chainSteps={chainSteps}
-            chainPlaying={chainPlaying}
-            chainIndex={chainIndex}
-            onStartChain={startChain}
-            onStopChain={stopChain}
-            onAddChainStep={addChainStep}
-            onRemoveChainStep={removeChainStep}
-            onMoveChainStep={moveChainStep}
-            onUpdateChainBars={updateChainBars}
-          />
+          <MainContentArea>
+            <AppRouter
+              route={activeView}
+              ports={ports}
+              clock={clock}
+              devices={devices}
+              updateDevice={updateDevice}
+              selectedIn={selectedIn}
+              selectedOut={selectedOut}
+              onSelectIn={setSelectedIn}
+              onSelectOut={setSelectedOut}
+              diagMessage={diagMessage}
+              diagRunning={diagRunning}
+              onRunDiagnostics={runDiagnostics}
+              onQuickStart={quickStart}
+              loadingPorts={loadingPorts}
+              logCapReached={logCapReached}
+              sessionStatus={sessionStatus}
+              onSessionStart={startSessionRecording}
+              onSessionStop={stopSessionRecording}
+              onSessionReveal={revealSessionLog}
+              monitorRows={activity.slice(0, 12)}
+              clearLog={clearLog}
+              controls={controls}
+              selectedControl={selectedControl}
+              selectedControlId={selectedControlId}
+              setSelectedControlId={setSelectedControlId}
+              updateSlot={updateSlot}
+              learnStatus={learnStatus}
+              onLearn={(slotIndex: number) =>
+                selectedControl && startLearn(selectedControl.id, slotIndex)
+              }
+              onCancelLearn={cancelLearn}
+              note={note}
+              ccValue={ccValue}
+              onSendNote={sendTestNote}
+              onSendCc={sendCc}
+              onQuickTest={(portId: string, ch: number) =>
+                sendQuickNote(portId, ch, note)
+              }
+              onQuickCc={(
+                portId: string,
+                ch: number,
+                ccNum: number,
+                val: number
+              ) => sendQuickCc(portId, ch, ccNum, val)}
+              onQuickProgram={(portId: string, ch: number, program: number) =>
+                sendQuickProgram(portId, ch, program)
+              }
+              onSendSnapshot={() => {
+                if (!activeSnapshotId) return;
+                setPendingSnapshotId(activeSnapshotId);
+                void scheduleSnapshot(activeSnapshotId);
+              }}
+              onAddDeviceRoutes={addDeviceRoutes}
+              routes={routes}
+              setRoutes={setRoutes}
+              updateControl={updateControl}
+              onEmitControl={emitControl}
+              snapshots={snapshotsState}
+              activeSnapshotId={activeSnapshotId}
+              onSelectSnapshot={triggerSnapshot}
+              onDropSnapshot={dropSnapshot}
+              onStageSendCc={sendDeviceCc}
+              stageDropControlId={stageDropControlId}
+              onChangeStageDropControlId={setStageDropControlId}
+              stageDropToValue={stageDropToValue}
+              onChangeStageDropToValue={(value: number) =>
+                setStageDropToValue(
+                  Math.min(Math.max(Math.round(value), 0), 127)
+                )
+              }
+              stageDropDurationMs={stageDropDurationMs}
+              onChangeStageDropDurationMs={(ms: number) =>
+                setStageDropDurationMs(
+                  Math.min(Math.max(Math.round(ms), 0), 60_000)
+                )
+              }
+              pendingSnapshotId={pendingSnapshotId}
+              snapshotQueueStatus={snapshotQueueStatus}
+              onCaptureSnapshot={(snapshotId: string) => {
+                if (!midiApi) return;
+                const effectiveBpm =
+                  useClockSync && clockBpm ? clockBpm : tempoBpm;
+                void midiApi
+                  .captureSnapshot({
+                    bpm: effectiveBpm,
+                    notes: snapshotsState.captureNotes,
+                  })
+                  .then((snapshot) => {
+                    setSnapshotsState((current) =>
+                      writeSnapshotToSlot(current, snapshotId, snapshot)
+                    );
+                  });
+              }}
+              onCancelPendingSnapshot={() => {
+                setPendingSnapshotId(null);
+                void midiApi?.flushSnapshotQueue();
+              }}
+              onChangeSnapshotBank={(bankId: string) =>
+                setSnapshotsState((current) => ({
+                  ...current,
+                  activeBankId: bankId,
+                }))
+              }
+              snapshotQuantize={snapshotQuantize}
+              snapshotMode={snapshotsState.strategy}
+              onChangeSnapshotQuantize={setSnapshotQuantize}
+              onChangeSnapshotMode={(mode: SnapshotMode) => {
+                setSnapshotMode(mode);
+                setSnapshotsState((current) => ({
+                  ...current,
+                  strategy: mode,
+                }));
+              }}
+              snapshotFadeMs={snapshotsState.fadeMs}
+              onChangeSnapshotFade={(ms: number) => {
+                const next = Math.max(0, ms);
+                setSnapshotFadeMs(next);
+                setSnapshotsState((current) => ({ ...current, fadeMs: next }));
+              }}
+              snapshotCommitDelayMs={snapshotsState.commitDelayMs}
+              onChangeSnapshotCommitDelay={(ms: number) =>
+                setSnapshotsState((current) => ({
+                  ...current,
+                  commitDelayMs: Math.max(0, Math.round(ms)),
+                }))
+              }
+              snapshotClockSource={snapshotClockSource}
+              onChangeSnapshotClockSource={setSnapshotClockSource}
+              snapshotCycleBars={snapshotCycleBars}
+              onChangeSnapshotCycleBars={(bars: number) =>
+                setSnapshotCycleBars(
+                  Math.min(Math.max(Math.round(bars), 1), 32)
+                )
+              }
+              chainSteps={chainSteps}
+              chainPlaying={chainPlaying}
+              chainIndex={chainIndex}
+              onStartChain={startChain}
+              onStopChain={stopChain}
+              onAddChainStep={addChainStep}
+              onRemoveChainStep={removeChainStep}
+              onMoveChainStep={moveChainStep}
+              onUpdateChainBars={updateChainBars}
+            />
+          </MainContentArea>
         </BodySplitPane>
         <BottomUtilityBar
           midiReady={Boolean(selectedOut)}
