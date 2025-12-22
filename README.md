@@ -3,12 +3,14 @@
 Windows desktop MIDI playground that uses the OXI One as the hardware hub (USB in to OXI, OXI handles DIN/TRS downstream).
 
 Core goals
+
 - Snapshot-style routing and stability
 - Generative sequencer rack
 - Instrument registry and CC maps
 - OXI stays the hardware brain for downstream synths via MIDI out
 
 Quick start
+
 1. Install Node 20+ and enable corepack (`corepack enable`)
 2. Install deps: `corepack pnpm install`
 3. Dev server: `corepack pnpm -C apps/desktop dev`
@@ -19,6 +21,7 @@ Quick start
 7. User guide: see `docs/how-to.md` for the current flow (setup, mapping, snapshots, chains, clock, monitor)
 
 Current desktop app highlights
+
 - Backend selector (WinMM active; Windows MIDI Services stubbed for future)
 - Device setup (up to 8), port binding, default channel/clock flag, OXI quick-setup + port labeling
 - Routing patchbay with filters, channel force/passthrough, clock thinning, loop guard
@@ -29,12 +32,15 @@ Current desktop app highlights
 - Persistence: saved project state (devices/routes/mapping) under Electron userData
 - Diagnostics card (sends test note), monitor view, manual ping (note/CC), outgoing messages visible in Monitor
 
-Latest updates (Dec 2025)
+## Latest updates (Dec 2025)
+
+- **Major Refactor**: Extracted core application logic and state management from `App.tsx` into a dedicated `useAppController` hook, significantly improving code maintainability and separating concerns.
 - Added Surfaces board and control primitives (fader/knob/crossfader/pads/step grid) with coarse/fine drag and bi-directional feedback
 - Mapping page: slot editor now supports device selection, per-slot enable, curve/min/max editing; macro multi-bind button; assignment wizard stub with multi-select CCs, curve/range/start slot/device, and color highlighting
 - Snapshot scheduler moved to main process (queueing + cycle-aware commit); Stage Drop supports a bundled macro ramp
 
 Roadmap (see `docs/roadmap.md` for full details)
+
 - Phase 0: MIDI backend abstraction (done)
 - Phase 1: Device graph + routing UI (done)
 - Phase 2: Mapping engine v1 (done)
@@ -46,6 +52,7 @@ Roadmap (see `docs/roadmap.md` for full details)
 - Phase 8: Optional grid/DAW features
 
 Docs
+
 - docs/product-brief.md
 - docs/oxi-integration.md
 - docs/routing-model.md
@@ -57,4 +64,5 @@ Docs
 - docs/engineering.md
 
 Agent entrypoints
+
 - docs/agent-flow.md

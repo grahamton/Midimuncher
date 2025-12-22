@@ -1,4 +1,5 @@
-import { CheckCircle2, Zap } from "lucide-react";
+import { CheckCircle2, Zap, Wand2 } from "lucide-react";
+import { useState } from "react";
 
 import { getInstrumentProfile } from "@midi-playground/core";
 import type { ControlElement, Curve, MappingSlot } from "@midi-playground/core";
@@ -6,6 +7,7 @@ import type { DeviceConfig } from "../../../shared/projectTypes";
 import { Page, PageHeader, Panel } from "../components/layout";
 import { clampChannel, clampMidi } from "../lib/clamp";
 import { styles } from "../styles";
+import { AssignmentWizard } from "./AssignmentWizard";
 
 export function MappingPage({
   controls,
@@ -22,13 +24,17 @@ export function MappingPage({
   onSendCc,
   note,
   ccValue,
-  devices
+  devices,
 }: {
   controls: ControlElement[];
   selectedControl: ControlElement | undefined;
   selectedControlId: string | null;
   setSelectedControlId: (id: string) => void;
-  updateSlot: (controlId: string, slotIndex: number, partial: Partial<MappingSlot>) => void;
+  updateSlot: (
+    controlId: string,
+    slotIndex: number,
+    partial: Partial<MappingSlot>
+  ) => void;
   updateControl?: (id: string, partial: Partial<ControlElement>) => void;
   onEmitControl?: (control: ControlElement, rawValue: number) => void;
   learnStatus: "idle" | "listening" | "captured" | "timeout";
@@ -40,60 +46,80 @@ export function MappingPage({
   ccValue: number;
   devices: DeviceConfig[];
 }) {
-  const targetDevice = devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ?? devices[0];
-  const targetProfile = targetDevice ? getInstrumentProfile(targetDevice.instrumentId) : null;
+  const [showWizard, setShowWizard] = useState(false);
+  const targetDevice =
+    devices.find((d) => selectedControl?.slots[0]?.targetDeviceId === d.id) ??
+    devices[0];
+  const targetProfile = targetDevice
+    ? getInstrumentProfile(targetDevice.instrumentId)
+    : null;
   const macroTargets = [
     {
       label: "Filter",
       cc: targetProfile?.cc[0]?.cc ?? 74,
       min: 0,
       max: 127,
-      curve: "linear" as Curve
+      curve: "linear" as Curve,
     },
     {
       label: "Resonance",
       cc: targetProfile?.cc[1]?.cc ?? 71,
       min: 0,
       max: 110,
-      curve: "expo" as Curve
+      curve: "expo" as Curve,
     },
     {
       label: "Env Amt",
       cc: targetProfile?.cc[2]?.cc ?? 79,
       min: 10,
       max: 120,
-      curve: "log" as Curve
-    }
+      curve: "log" as Curve,
+    },
   ];
 
-  function applyPreset(ccNumber: number, slotIndex = 0) {
+  function applyPreset(ccNumber: number, slotIndex = 0, label?: string) {
     if (!selectedControl) return;
     updateSlot(selectedControl.id, slotIndex, {
       kind: "cc",
       cc: clampMidi(ccNumber),
       enabled: true,
       targetDeviceId: targetDevice?.id ?? null,
-      channel: clampChannel(targetDevice?.channel ?? 1)
+      channel: clampChannel(targetDevice?.channel ?? 1),
     });
+    if (label && updateControl) {
+      // Optional: rename the slot or control label if desired
+      // mostly we just want to bind the CC
+    }
   }
 
-  function applyMacroMultiBind() {
+  function applyMacroMultiBind(targets?: Array<{ cc: number; label: string }>) {
     if (!selectedControl) return;
-    macroTargets.slice(0, selectedControl.slots.length).forEach((t, idx) => {
+    const finalTargets = targets ?? macroTargets;
+
+    finalTargets.slice(0, selectedControl.slots.length).forEach((t, idx) => {
+      // Use defaults for unknown properties
+      const safeT = {
+        min: 0,
+        max: 127,
+        curve: "linear" as Curve,
+        ...t,
+      };
+
       updateSlot(selectedControl.id, idx, {
         enabled: true,
         kind: "cc",
-        cc: clampMidi(t.cc),
-        min: t.min,
-        max: t.max,
-        curve: t.curve,
+        cc: clampMidi(safeT.cc),
+        min: safeT.min ?? 0,
+        max: safeT.max ?? 127,
+        curve: (safeT.curve as Curve) ?? "linear",
         targetDeviceId: targetDevice?.id ?? null,
-        channel: clampChannel(targetDevice?.channel ?? 1)
+        channel: clampChannel(targetDevice?.channel ?? 1),
       });
     });
+
     if (updateControl) {
       updateControl(selectedControl.id, {
-        label: `${selectedControl.label} (macro x${macroTargets.length})`
+        label: `${selectedControl.label} (macro x${finalTargets.length})`,
       });
     }
   }
@@ -107,6 +133,17 @@ export function MappingPage({
 
   return (
     <Page>
+      {showWizard && (
+        <AssignmentWizard
+          selectedControlId={selectedControlId}
+          selectedControlLabel={selectedControl?.label}
+          devices={devices}
+          targetDeviceId={targetDevice?.id ?? null}
+          onAssignCc={(deviceId, cc, label) => applyPreset(cc, 0, label)}
+          onMultiBind={(_, targets) => applyMacroMultiBind(targets)}
+          onClose={() => setShowWizard(false)}
+        />
+      )}
       <PageHeader
         title="MIDI Mapping"
         right={
@@ -134,7 +171,7 @@ export function MappingPage({
               padding: "10px",
               display: "flex",
               flexDirection: "column",
-              gap: "6px"
+              gap: "6px",
             }}
           >
             {controls.map((control) => (
@@ -142,8 +179,11 @@ export function MappingPage({
                 key={control.id}
                 style={{
                   ...styles.navItem,
-                  backgroundColor: control.id === selectedControlId ? "#0078d422" : "transparent",
-                  color: control.id === selectedControlId ? "#fff" : "#888"
+                  backgroundColor:
+                    control.id === selectedControlId
+                      ? "#0078d422"
+                      : "transparent",
+                  color: control.id === selectedControlId ? "#fff" : "#888",
                 }}
                 onClick={() => setSelectedControlId(control.id)}
               >
@@ -153,20 +193,40 @@ export function MappingPage({
           </div>
         </Panel>
         <Panel
-          title={`Targets ${selectedControl ? `(${selectedControl.label})` : ""}`}
+          title={`Targets ${
+            selectedControl ? `(${selectedControl.label})` : ""
+          }`}
           right={
             <div style={styles.row}>
+              {targetProfile ? (
+                <button
+                  style={{
+                    ...styles.btnPrimary,
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                  disabled={!selectedControl}
+                  onClick={() => setShowWizard(true)}
+                >
+                  <Wand2 size={12} /> Wizard
+                </button>
+              ) : null}
               {targetProfile ? (
                 <button
                   style={styles.btnSecondary}
                   onClick={() => applyPreset(targetProfile.cc[0]?.cc ?? 74)}
                   disabled={!selectedControl}
                 >
-                  Quick-assign {targetProfile.cc[0]?.label ?? "Cutoff"}
+                  Quick: {targetProfile.cc[0]?.label ?? "Cutoff"}
                 </button>
               ) : null}
-              <button style={styles.btnSecondary} onClick={applyMacroMultiBind} disabled={!selectedControl}>
-                Macro bind 3 targets
+              <button
+                style={styles.btnSecondary}
+                onClick={() => applyMacroMultiBind()}
+                disabled={!selectedControl}
+              >
+                Macro bind 3
               </button>
               <button
                 style={styles.btnSecondary}
@@ -176,14 +236,13 @@ export function MappingPage({
                   selectedControl.slots.forEach((_, idx) =>
                     updateSlot(selectedControl.id, idx, {
                       enabled: false,
-                      kind: "empty"
+                      kind: "empty",
                     })
                   );
                 }}
               >
                 Clear slots
               </button>
-              <button style={styles.btnSecondary}>Add Target Slot</button>
             </div>
           }
         >
@@ -191,7 +250,9 @@ export function MappingPage({
             {(selectedControl ? selectedControl.slots : []).map((slot, idx) => {
               const deviceName =
                 devices.find((d) => d.id === slot.targetDeviceId)?.name ??
-                (slot.targetDeviceId ? `Device ${slot.targetDeviceId}` : "No target");
+                (slot.targetDeviceId
+                  ? `Device ${slot.targetDeviceId}`
+                  : "No target");
               const isCc = slot.kind === "cc";
               const isPc = slot.kind === "pc";
               const isNote = slot.kind === "note";
@@ -204,7 +265,7 @@ export function MappingPage({
                     onChange={(e) =>
                       updateSlot(selectedControl!.id, idx, {
                         kind: e.target.value as MappingSlot["kind"],
-                        enabled: e.target.value !== "empty"
+                        enabled: e.target.value !== "empty",
                       })
                     }
                   >
@@ -219,7 +280,7 @@ export function MappingPage({
                       checked={slot.enabled}
                       onChange={(e) =>
                         updateSlot(selectedControl!.id, idx, {
-                          enabled: e.target.checked
+                          enabled: e.target.checked,
                         })
                       }
                     />
@@ -235,7 +296,7 @@ export function MappingPage({
                         value={slot.cc ?? 0}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            cc: clampMidi(Number(e.target.value) || 0)
+                            cc: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -244,7 +305,7 @@ export function MappingPage({
                         value={slot.curve ?? "linear"}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            curve: e.target.value as Curve
+                            curve: e.target.value as Curve,
                           })
                         }
                       >
@@ -260,7 +321,7 @@ export function MappingPage({
                         value={slot.min ?? 0}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            min: clampMidi(Number(e.target.value) || 0)
+                            min: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -272,7 +333,7 @@ export function MappingPage({
                         value={slot.max ?? 127}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            max: clampMidi(Number(e.target.value) || 0)
+                            max: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -287,7 +348,7 @@ export function MappingPage({
                         value={slot.min ?? 0}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            min: clampMidi(Number(e.target.value) || 0)
+                            min: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -299,7 +360,7 @@ export function MappingPage({
                         value={slot.max ?? 127}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            max: clampMidi(Number(e.target.value) || 0)
+                            max: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -308,7 +369,7 @@ export function MappingPage({
                         value={slot.curve ?? "linear"}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            curve: e.target.value as Curve
+                            curve: e.target.value as Curve,
                           })
                         }
                       >
@@ -327,7 +388,7 @@ export function MappingPage({
                         value={slot.note ?? 60}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            note: clampMidi(Number(e.target.value) || 0)
+                            note: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -339,7 +400,7 @@ export function MappingPage({
                         value={slot.vel ?? 100}
                         onChange={(e) =>
                           updateSlot(selectedControl!.id, idx, {
-                            vel: clampMidi(Number(e.target.value) || 0)
+                            vel: clampMidi(Number(e.target.value) || 0),
                           })
                         }
                       />
@@ -350,7 +411,8 @@ export function MappingPage({
                     value={slot.targetDeviceId ?? ""}
                     onChange={(e) =>
                       updateSlot(selectedControl!.id, idx, {
-                        targetDeviceId: e.target.value === "" ? null : e.target.value
+                        targetDeviceId:
+                          e.target.value === "" ? null : e.target.value,
                       })
                     }
                   >
@@ -372,12 +434,16 @@ export function MappingPage({
                 ...styles.row,
                 marginTop: "12px",
                 flexWrap: "wrap",
-                gap: "6px"
+                gap: "6px",
               }}
             >
               <span style={styles.muted}>Top CCs:</span>
               {targetProfile.cc.slice(0, 5).map((c) => (
-                <button key={c.id} style={styles.btnTiny} onClick={() => applyPreset(c.cc)}>
+                <button
+                  key={c.id}
+                  style={styles.btnTiny}
+                  onClick={() => applyPreset(c.cc)}
+                >
                   CC {c.cc} - {c.label}
                 </button>
               ))}
@@ -397,7 +463,10 @@ export function MappingPage({
               </select>
               <button
                 style={styles.btnTiny}
-                onClick={() => selectedControl && updateSlot(selectedControl.id, 0, { enabled: false })}
+                onClick={() =>
+                  selectedControl &&
+                  updateSlot(selectedControl.id, 0, { enabled: false })
+                }
               >
                 Disable Slot 1
               </button>
@@ -412,13 +481,21 @@ export function MappingPage({
             </button>
             <div style={styles.row}>
               <span style={styles.muted}>Live send</span>
-              <button style={styles.btnTiny} onClick={() => nudgeControl((selectedControl?.value ?? 0) - 8)}>
+              <button
+                style={styles.btnTiny}
+                onClick={() => nudgeControl((selectedControl?.value ?? 0) - 8)}
+              >
                 -
               </button>
-              <button style={styles.btnTiny} onClick={() => nudgeControl((selectedControl?.value ?? 0) + 8)}>
+              <button
+                style={styles.btnTiny}
+                onClick={() => nudgeControl((selectedControl?.value ?? 0) + 8)}
+              >
                 +
               </button>
-              <span style={styles.muted}>Value: {selectedControl?.value ?? 0}</span>
+              <span style={styles.muted}>
+                Value: {selectedControl?.value ?? 0}
+              </span>
             </div>
           </div>
         </Panel>

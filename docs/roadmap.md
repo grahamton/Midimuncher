@@ -9,21 +9,25 @@ Status vs goals: Phase 0–3 shipped (snapshots+Jump/Commit/morph/assign flows n
 ## Phases
 
 - **Phase 0 - MIDI backend spike (done)**
+
   - Backend abstraction + WinMM provider; stub Windows MIDI Services provider.
   - Backend selector UI and basic diagnostics (send test note).
 
 - **Phase 1 - Device graph + routing (done)**
+
   - Device model (max 8) with port binding, default channel, clock flag, and instrument selection.
   - Routing patchbay with filters, channel force/passthrough, clock thinning, loop guard, and device-aware route creation.
   - Monitor view with backend/port context, log cap indicator, and clear control.
   - Optional: merge controls.
 
 - **Phase 2 - Mapping engine v1 (done)**
+
   - Virtual controls with 8 CC slots each (per-slot curve, min/max, optional channel override, device target).
   - Curated CC presets pulled from the instrument registry for quick slot selection.
   - Includes: MIDI Learn, program change + note mapping, button semantics (toggle/momentary), save/load.
 
 - **Phase 3 - Snapshots, Jump, Commit (done)**
+
   - Snapshot = per-device CC state + optional one-shots; stores BPM and metadata.
   - 20 banks A- 20 snapshots per project.
   - Jump (fade, incl. zero), Commit (cycle-end, no fade); global cycle length 1-32 bars; queue/flush behavior.
@@ -32,28 +36,30 @@ Status vs goals: Phase 0–3 shipped (snapshots+Jump/Commit/morph/assign flows n
   - Snapshot pads grid for live recall (big touch targets) with color labels per pad.
   - Snapshot morphing crossfader: interpolate between two snapshots with per-parameter curves; support staged fades (e.g., slow filters, fast mutes).
   - Assign flow to bind multiple controls to a snapshot pad or morph lane in one pass.
+  - Safety rails: rate limiting and smoothing to avoid overloading DIN/TRS endpoints when multiple LFOs/sequencers run; per-engine CPU/throughput guardrails.
 
-- **Phase 4 - Performance surfaces (Condukt-inspired)**
-  - Board/page system: Sound Design Lab (dense editing), Performance surface (macro faders/XY), Mix desk (levels/pan/mutes); one-tap page switching.
-  - Stage view (Neuzeit Drop + Condukt mashup): scene launcher with quantized Launch and a bundled Drop transition (commit-at-cycle-end + optional macro ramp), transition progress fader, and rig-aware instrument strips for OXI lanes 1–4 (Monologue, MicroFreak, Pro VS Mini, Digitakt).
-  - Resizable controls (fader/knob/crossfader/button/step grid) with orientation presets (1x2, 1x3, 2x1, 3x1) and multi-touch; includes value taper and coarse/fine drag.
-  - Macro faders driving multiple targets with per-target min/max, curve type (linear/inverse/exponential/log), and optional channel overrides; bi-directional feedback rendering.
-  - Instrument-aware picker: browse/search CC/NRPN by name/category; quick-add sets for envelopes, filters, LFOs, sequencer params; assignment wizard for rapid multi-bind and bulk color tagging.
-  - Control theming: dark "stage" skin and light "studio" skin; per-control color tags to mirror hardware groupings.
-  - Mixer template for 8-16 channels with mute/solo, level/pan, and "global send" macros (e.g., one fader lifts all reverb sends).
+- **Phase 4 - Performance surfaces (Condukt-inspired) (done)**
+
+  - Stage view: scene launcher (quantized), Drop transition (commit + macro ramp), and rig-aware instrument strips using new Fader components.
+  - Resizable controls: Fader/Knob/Crossfader/Button/StepGrid support flexible sizing via style props (1x2, 2x1 compatible).
+  - Macro faders: "Macro Multi-Bind" in Assignment Wizard enables one control driving multiple targets with custom curves.
+  - Assignment wizard: Instrument-aware picker to browse CCs by name and category; streamlined mapping workflow.
+  - (Deferred) Mixer template and full skin theming moved to future polish phase.
 
 - **Phase 5 - Software modulation + generative**
+
   - Software LFO engine: unlimited tempo-synced LFOs (sine/saw/square/random/S+H) assignable to any mapped parameter; per-LFO depth, phase, and polyrhythmic divisions.
   - Parameter sequencer lanes: 16-32 step grids that emit CC/NRPN values; supports probability, density, velocity scaling, per-step curves, and lock steps to snapshots.
   - Euclidean pattern generator for gates/notes and CC pulses; randomize/seed tools with per-lane dice and undo.
   - Crossfader/XY macros for morphing between modulation scenes (e.g., LFO set A -> set B); scene store/recall slots.
-  - Safety rails: rate limiting and smoothing to avoid overloading DIN/TRS endpoints when multiple LFOs/sequencers run; per-engine CPU/throughput guardrails.
 
 - **Phase 6 - Chain mode**
+
   - Up to 20 chains, 64 steps each; step/auto-advance quantized to cycle boundaries.
   - UI: chain editor (list of steps), transport controls.
 
 - **Phase 7 - OXI integration**
+
   - OXI configuration surfaced in docs and UI hints:
     - USB mode: Device
     - OXI Split (A/B/C ports) to expand available channels
