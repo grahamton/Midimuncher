@@ -148,7 +148,9 @@ export function useAppController() {
     Record<string, { value: number; latched: boolean }>
   >({});
   const hardwareStateRef = useRef(hardwareState);
-  useEffect(() => { hardwareStateRef.current = hardwareState; }, [hardwareState]);
+  useEffect(() => {
+    hardwareStateRef.current = hardwareState;
+  }, [hardwareState]);
 
   const [instrumentLibrary, setInstrumentLibrary] = useState<any[]>([]);
   useEffect(() => {
@@ -235,12 +237,43 @@ export function useAppController() {
   useEffect(() => {
     devicesRef.current = devices;
   }, [devices]);
+  const controlsRef = useRef(controls);
+  useEffect(() => {
+    controlsRef.current = controls;
+  }, [controls]);
   useEffect(() => {
     selectedDeviceIdRef.current = selectedDeviceId;
   }, [selectedDeviceId]);
   useEffect(() => {
     learnTargetRef.current = learnTarget;
   }, [learnTarget]);
+
+  // Helper to emit control changes (send MIDI)
+  const onEmitControl = (control: ControlElement, value: number) => {
+    // Send to mapped target
+    const slots = control.slots.filter(
+      (s): s is Extract<typeof s, { kind: "cc" }> =>
+        s.enabled && s.kind === "cc"
+    );
+    slots.forEach((slot) => {
+      const targetId = slot.targetDeviceId;
+      if (!targetId) return;
+      const device = devicesRef.current.find((d) => d.id === targetId);
+      if (!device || !device.outputId || !midiApi) return;
+
+      const ch =
+        slot.channel !== undefined ? slot.channel : device.channel || 1;
+      midiApi.send({
+        portId: device.outputId,
+        msg: {
+          t: "cc",
+          ch: ch,
+          cc: slot.cc,
+          val: value,
+        },
+      });
+    });
+  };
 
   // Auto-connect OXI
   useEffect(() => {
@@ -491,6 +524,7 @@ export function useAppController() {
               return { ...c, slots };
             })
           );
+        }
       }
       // Soft Takeover / Hardware Sync Logic
       else if (msg.t === "cc") {
@@ -514,14 +548,15 @@ export function useAppController() {
             let nextLatched = currentHw?.latched ?? false;
 
             if (!nextLatched) {
-               const softwareVal = ctrl.value;
-               // Check if we crossed the software value
-               // We need previous HW value to know if we crossed, but for now
-               // a simple tolerance check or "passed through" logic
-               // Or simpler: if abs(hw - sw) < threshold, latch immediately.
-               if (Math.abs(nextVal - softwareVal) < 4) { // Loose tolerance
-                 nextLatched = true;
-               }
+              const softwareVal = ctrl.value;
+              // Check if we crossed the software value
+              // We need previous HW value to know if we crossed, but for now
+              // a simple tolerance check or "passed through" logic
+              // Or simpler: if abs(hw - sw) < threshold, latch immediately.
+              if (Math.abs(nextVal - softwareVal) < 4) {
+                // Loose tolerance
+                nextLatched = true;
+              }
             }
 
             // If latched, we drive the software value
@@ -537,26 +572,26 @@ export function useAppController() {
               ...prev,
               [ctrl.id]: {
                 value: nextVal,
-                latched: nextLatched
-              }
+                latched: nextLatched,
+              },
             };
           });
 
           // If latched, actually emit the control change to the app
           const hw = hardwareStateRef.current[ctrl.id];
-          // Note: useState ref pattern needed for hardwareState to be readable here if we use it.
-          // Simplified: just check the local calculations.
-          if ((currentHw?.latched || Math.abs(msg.val - ctrl.value) < 4)) {
-             // It is latched (or just became latched).
-             // We should update the main control value.
-             // But we need to avoid "fighting" if the update causes a send back to hardware.
-             // The main loop prevents echo if input == output, usually.
+          if (hw?.latched || Math.abs(msg.val - ctrl.value) < 4) {
+            // It is latched (or just became latched).
+            // We should update the main control value.
+            // But we need to avoid "fighting" if the update causes a send back to hardware.
+            // The main loop prevents echo if input == output, usually.
 
-             // Reuse existing nudge/update logic?
-             // We need to setControls...
-             setControls(curr => curr.map(c => c.id === ctrl.id ? { ...c, value: msg.val } : c));
-             // And emit?
-             onEmitControl(ctrl, msg.val);
+            // Reuse existing nudge/update logic?
+            // We need to setControls...
+            setControls((curr) =>
+              curr.map((c) => (c.id === ctrl.id ? { ...c, value: msg.val } : c))
+            );
+            // And emit?
+            onEmitControl(ctrl, msg.val);
           }
         }
       }
