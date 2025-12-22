@@ -13,7 +13,10 @@ import type {
   SnapshotDropBundlePayload,
   SnapshotSchedulePayload,
 } from "../shared/ipcTypes";
-import type { ProjectState, SequencerApplyPayload } from "../shared/projectTypes";
+import type {
+  ProjectState,
+  SequencerApplyPayload,
+} from "../shared/projectTypes";
 import type { BackendId } from "./backends/types";
 import { MidiBridge } from "./midiBridge";
 import { ProjectStore } from "./projectStore";
@@ -40,17 +43,17 @@ function createWindow() {
       preload: path.join(appDir, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
-    }
+      sandbox: false,
+    },
   });
 
   const rendererUrl =
-    (isDev && process.env.VITE_DEV_SERVER_URL) || `file://${path.join(appDir, "../dist/index.html")}`;
+    (isDev && process.env.VITE_DEV_SERVER_URL) ||
+    `file://${path.join(appDir, "../dist/index.html")}`;
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(rendererUrl);
     mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else {
     mainWindow.loadURL(rendererUrl);
   }
 
@@ -59,10 +62,18 @@ function createWindow() {
   });
 }
 
+// Enable Windows MIDI Services (WinRT MIDI API) for Bluetooth MIDI support
+// This allows Windows 10/11 to natively detect BLE-MIDI devices like the OXI One
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("use-winrt-midi-api", "enabled");
+}
+
 app.whenReady().then(() => {
   app.setAppUserModelId("com.midimuncher.desktop");
   projectStore = new ProjectStore({ dir: app.getPath("userData") });
-  sessionLogger = new SessionLogger(path.join(app.getPath("userData"), "session-logs"));
+  sessionLogger = new SessionLogger(
+    path.join(app.getPath("userData"), "session-logs")
+  );
   const snapshotService = new SnapshotService(midiBridge, sessionLogger);
   snapshotService.setStatusEmitter((status) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -97,29 +108,42 @@ app.whenReady().then(() => {
     return midiBridge.send(payload);
   });
   ipcMain.handle("midi:setRoutes", (_event, routes: RouteConfig[]) => {
-    sessionLogger?.log("ipc", { name: "midi:setRoutes", routeCount: Array.isArray(routes) ? routes.length : 0 });
+    sessionLogger?.log("ipc", {
+      name: "midi:setRoutes",
+      routeCount: Array.isArray(routes) ? routes.length : 0,
+    });
     return midiBridge.setRoutes(routes);
   });
 
-  ipcMain.handle("mapping:emit", async (_event, payload: MappingEmitPayload) => {
-    try {
-      const sends = computeMappingSends(payload.control, payload.value, payload.devices);
-      for (const send of sends) {
-        await midiBridge.openOut(send.portId);
-        await midiBridge.send({ portId: send.portId, msg: send.msg });
+  ipcMain.handle(
+    "mapping:emit",
+    async (_event, payload: MappingEmitPayload) => {
+      try {
+        const sends = computeMappingSends(
+          payload.control,
+          payload.value,
+          payload.devices
+        );
+        for (const send of sends) {
+          await midiBridge.openOut(send.portId);
+          await midiBridge.send({ portId: send.portId, msg: send.msg });
+        }
+        return true;
+      } catch (err) {
+        console.error("mapping:emit failed", err);
+        return false;
       }
-      return true;
-    } catch (err) {
-      console.error("mapping:emit failed", err);
-      return false;
     }
-  });
+  );
 
   ipcMain.handle("project:load", async () => {
     if (!projectStore) return null;
     const doc = await projectStore.load();
     snapshotService.updateDevices(doc.state.devices);
-    sessionLogger?.log("ipc", { name: "project:load", schemaVersion: doc.schemaVersion });
+    sessionLogger?.log("ipc", {
+      name: "project:load",
+      schemaVersion: doc.schemaVersion,
+    });
     return doc;
   });
   ipcMain.handle("project:setState", (_event, state: ProjectState) => {
@@ -144,40 +168,88 @@ app.whenReady().then(() => {
     await projectStore.flush();
     return true;
   });
-  ipcMain.handle("snapshot:capture", (_event, payload: SnapshotCapturePayload) => {
-    sessionLogger?.log("ipc", { name: "snapshot:capture" });
-    return snapshotService.capture(payload);
-  });
-  ipcMain.handle("snapshot:recall", (_event, payload: SnapshotRecallPayload) => {
-    sessionLogger?.log("ipc", { name: "snapshot:recall", strategy: payload?.strategy ?? null });
-    return snapshotService.recall(payload);
-  });
-  ipcMain.handle("snapshot:schedule", (_event, payload: SnapshotSchedulePayload) => {
-    sessionLogger?.log("ipc", { name: "snapshot:schedule", strategy: payload?.strategy ?? null });
-    return snapshotService.schedule(payload);
-  });
-  ipcMain.handle("snapshot:scheduleDropBundle", (_event, payload: SnapshotDropBundlePayload) => {
-    sessionLogger?.log("ipc", { name: "snapshot:scheduleDropBundle" });
-    return snapshotService.scheduleDropBundle(payload);
-  });
+  ipcMain.handle(
+    "snapshot:capture",
+    (_event, payload: SnapshotCapturePayload) => {
+      sessionLogger?.log("ipc", { name: "snapshot:capture" });
+      return snapshotService.capture(payload);
+    }
+  );
+  ipcMain.handle(
+    "snapshot:recall",
+    (_event, payload: SnapshotRecallPayload) => {
+      sessionLogger?.log("ipc", {
+        name: "snapshot:recall",
+        strategy: payload?.strategy ?? null,
+      });
+      return snapshotService.recall(payload);
+    }
+  );
+  ipcMain.handle(
+    "snapshot:schedule",
+    (_event, payload: SnapshotSchedulePayload) => {
+      sessionLogger?.log("ipc", {
+        name: "snapshot:schedule",
+        strategy: payload?.strategy ?? null,
+      });
+      return snapshotService.schedule(payload);
+    }
+  );
+  ipcMain.handle(
+    "snapshot:scheduleDropBundle",
+    (_event, payload: SnapshotDropBundlePayload) => {
+      sessionLogger?.log("ipc", { name: "snapshot:scheduleDropBundle" });
+      return snapshotService.scheduleDropBundle(payload);
+    }
+  );
   ipcMain.handle("snapshot:flushQueue", () => {
     sessionLogger?.log("ipc", { name: "snapshot:flushQueue" });
     return snapshotService.flushQueue();
   });
 
-  ipcMain.handle("session:status", () => (sessionLogger?.status() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);
-  ipcMain.handle("session:start", () => (sessionLogger?.start() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);
-  ipcMain.handle("session:stop", () => (sessionLogger?.stop() ?? { active: false, filePath: null, startedAt: null, eventCount: 0 }) satisfies SessionLogStatus);
+  ipcMain.handle(
+    "session:status",
+    () =>
+      (sessionLogger?.status() ?? {
+        active: false,
+        filePath: null,
+        startedAt: null,
+        eventCount: 0,
+      }) satisfies SessionLogStatus
+  );
+  ipcMain.handle(
+    "session:start",
+    () =>
+      (sessionLogger?.start() ?? {
+        active: false,
+        filePath: null,
+        startedAt: null,
+        eventCount: 0,
+      }) satisfies SessionLogStatus
+  );
+  ipcMain.handle(
+    "session:stop",
+    () =>
+      (sessionLogger?.stop() ?? {
+        active: false,
+        filePath: null,
+        startedAt: null,
+        eventCount: 0,
+      }) satisfies SessionLogStatus
+  );
   ipcMain.handle("session:reveal", () => {
     const p = sessionLogger?.revealPath() ?? null;
     if (p) shell.showItemInFolder(p);
     return p;
   });
 
-  ipcMain.handle("sequencer:apply", (_event, payload: SequencerApplyPayload) => {
-    sessionLogger?.log("ipc", { name: "sequencer:apply" });
-    return sequencerHost.apply(payload);
-  });
+  ipcMain.handle(
+    "sequencer:apply",
+    (_event, payload: SequencerApplyPayload) => {
+      sessionLogger?.log("ipc", { name: "sequencer:apply" });
+      return sequencerHost.apply(payload);
+    }
+  );
 
   midiBridge.on("midi", (evt: MidiEvent) => {
     sessionLogger?.logMidi(evt);

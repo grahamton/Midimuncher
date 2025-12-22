@@ -27,3 +27,4 @@ Keep the workspace modular so each agent can focus on a clear domain, stay lean,
 ## Recent QA Passes
 
 - 2025-12-21: Confirmed App.tsx refactor (reduced to ~900 lines), removed empty `packages/core/src/engine` dir, verified tests pass.
+- 2025-12-21: Phase 7 (OXI Integration) complete. All lint and tests passing (10/10). V4 schema migration verified.

@@ -37,10 +37,11 @@ This is a quick-start guide for the desktop app as it exists today. It assumes y
 - Morph (placeholder): crossfade UI between two snapshots; per-parameter morphing will arrive later.
 
 ## 4) Chains (Chains tab)
-- Add steps with **Add Step** or **+ Step**; each step has a snapshot name and bar length.
-- Reorder with the chevrons; remove with the trash icon; edit bar count inline.
-- **Play/Stop** starts/stops the chain; the current step highlights while playing.
-- Chain execution respects the snapshot quantize setting and the active tempo/clock source.
+- **Chain List**: Manage up to 20 performance chains.
+- **Step Editor**: Each chain supports up to 64 steps. Set snapshot target and bar duration (1–32) for each step.
+- **Renaming**: Click the chain name in the editor panel to personalize your performance sequences.
+- **Play/Stop**: Starts/stops the sequence; steps auto-advance on bar boundaries based on the cycle length.
+- **Limits**: UI provides feedback when the maximum chain (20) or step (64) count is reached.
 
 ## 4b) Stage (Stage tab)
 - **Launch**: schedules the scene snapshot at the chosen quantize (beat/bar).

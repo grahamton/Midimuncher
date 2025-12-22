@@ -1,0 +1,6 @@
+
+> @midi-playground/desktop@0.0.0 lint C:\dev\Midimuncher\apps\desktop
+> tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json
+
+electron/projectStore.ts(32,7): error TS2322: Type '2' is not assignable to type '3'.
+ ELIFECYCLE  Command failed with exit code 2.

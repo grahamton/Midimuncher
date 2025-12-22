@@ -10,3 +10,13 @@ export * from "./sequencers/types";
 export * from "./snapshots/types";
 export * from "./snapshots/tracker";
 export * from "./snapshots/recall";
+
+export * from "./modulation/types";
+export * from "./modulation/lfo";
+export * from "./modulation/sequencer";
+export * from "./modulation/euclidean";
+export * from "./modulation/morph";
+export * from "./modulation/engine";
+
+export * from "./chains/types";
+export * from "./chains/runner";

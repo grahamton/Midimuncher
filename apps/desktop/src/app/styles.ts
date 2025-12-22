@@ -1,86 +1,122 @@
 import type { CSSProperties } from "react";
 
+/**
+ * TI-31 Solar Calculator Palette
+ */
+export const palette = {
+  tiBody: "#1e2433", // Deep navy plastic
+  tiDark: "#131821", // Recessed areas, nav rail
+  tiAmber: "#fdb813", // AC/ON button, active indicators, branding
+  tiFuncBlue: "#5a7fa1", // Function buttons (sin, cos, log)
+  tiWhiteKey: "#f4f1e5", // Digit keys (data entry)
+  tiLcdBg: "#a9b29e", // LCD display background
+  tiLcdText: "#21231e", // LCD display text
+  tiBorder: "#2a3142", // Subtle bevels
+  tiAccent: "#38bdf8", // Cyber-accent for software features
+};
+
+// Hardware button "ridges" style
+const RIDGED_BG = `repeating-linear-gradient(
+  180deg,
+  transparent,
+  transparent 4px,
+  rgba(0,0,0,0.1) 4px,
+  rgba(0,0,0,0.1) 5px
+)`;
+
 export const styles = {
   window: {
     height: "100vh",
     width: "100vw",
-    backgroundColor: "#0a0a0a",
+    backgroundColor: palette.tiBody,
     color: "#e0e0e0",
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     display: "flex",
     flexDirection: "column",
-    overflow: "hidden"
+    overflow: "hidden",
   },
   chrome: {
     display: "flex",
     flexDirection: "column",
-    height: "100%"
+    height: "100%",
   },
   topBar: {
     height: "60px",
-    backgroundColor: "#1a1a1a",
-    borderBottom: "1px solid #333",
+    backgroundColor: palette.tiDark,
+    borderBottom: `2px solid ${palette.tiAmber}`,
     display: "flex",
     alignItems: "center",
     padding: "0 16px",
-    gap: "24px"
+    gap: "24px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
   },
   cluster: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px"
+    gap: "4px",
   },
   badgeTitle: {
-    fontSize: "10px",
+    fontSize: "9px",
     textTransform: "uppercase",
-    color: "#888",
-    letterSpacing: "0.05em"
+    color: palette.tiAmber,
+    letterSpacing: "0.1em",
+    fontWeight: "bold",
   },
   badgeValue: {
     display: "flex",
     alignItems: "center",
-    gap: "8px"
+    gap: "8px",
+    backgroundColor: palette.tiLcdBg,
+    color: palette.tiLcdText,
+    padding: "4px 8px",
+    borderRadius: "2px",
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: "12px",
+    boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.3)",
   },
   row: {
     display: "flex",
     alignItems: "center",
-    gap: "8px"
+    gap: "8px",
   },
   pillRow: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    backgroundColor: "#252525",
+    backgroundColor: "rgba(0,0,0,0.2)",
     padding: "4px 8px",
-    borderRadius: "4px"
+    borderRadius: "4px",
   },
   body: {
     flex: 1,
     display: "flex",
-    overflow: "hidden"
+    overflow: "hidden",
   },
   nav: {
     width: "240px",
-    background: "linear-gradient(180deg, #0f2435 0%, #0b1b28 100%)",
-    borderRight: "1px solid #0e3a50",
+    background: palette.tiDark,
+    borderRight: `1px solid ${palette.tiBorder}`,
     display: "flex",
-    flexDirection: "column"
+    flexDirection: "column",
+    boxShadow: "4px 0 10px rgba(0,0,0,0.2)",
   },
   navHeader: {
     padding: "20px",
     display: "flex",
     flexDirection: "column",
-    gap: "12px"
+    gap: "12px",
   },
   logo: {
-    fontSize: "14px",
+    fontSize: "16px",
     fontWeight: "bold",
-    color: "#fff",
-    letterSpacing: "0.1em"
+    color: palette.tiAmber,
+    letterSpacing: "0.05em",
+    fontFamily: '"Inter", sans-serif',
   },
   navSection: {
     flex: 1,
-    padding: "10px 0"
+    padding: "10px 0",
   },
   navItem: {
     width: "100%",
@@ -95,228 +131,232 @@ export const styles = {
     gap: "12px",
     transition: "all 0.2s",
     background: "none",
-    backgroundImage: "none"
   },
   navFooter: {
     padding: "20px",
-    borderTop: "1px solid #1e1e1e",
+    borderTop: `1px solid ${palette.tiBorder}`,
     display: "flex",
     flexDirection: "column",
-    gap: "12px"
+    gap: "12px",
   },
   content: {
     flex: 1,
-    backgroundColor: "#0f0f0f",
+    backgroundColor: palette.tiBody,
     overflowY: "auto",
-    padding: "24px"
+    padding: "24px",
   },
   bottomBar: {
     height: "32px",
-    backgroundColor: "#101010",
-    borderTop: "1px solid #1e1e1e",
+    backgroundColor: palette.tiDark,
+    borderTop: `1px solid ${palette.tiBorder}`,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 12px",
     fontSize: "11px",
-    color: "#888"
+    color: "#888",
   },
   page: {
     display: "flex",
     flexDirection: "column",
     gap: "24px",
     maxWidth: "1200px",
-    margin: "0 auto"
+    margin: "0 auto",
   },
   pageHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    borderBottom: "1px solid #222",
-    paddingBottom: "16px"
+    borderBottom: `2px solid ${palette.tiFuncBlue}`,
+    paddingBottom: "16px",
   },
   pageTitle: {
     fontSize: "24px",
     fontWeight: "300",
-    margin: 0
+    margin: 0,
+    color: palette.tiAmber,
   },
   pageGrid2: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "20px"
+    gap: "20px",
   },
   panel: {
-    backgroundColor: "#1a1a1a",
-    border: "1px solid #333",
-    borderRadius: "4px",
+    backgroundColor: palette.tiDark,
+    border: `1px solid ${palette.tiBorder}`,
+    borderRadius: "8px",
     display: "flex",
-    flexDirection: "column"
+    flexDirection: "column",
+    boxShadow: "0 4px 6px rgba(0,0,0,0.3)",
   },
   panelHeader: {
     padding: "12px 16px",
-    borderBottom: "1px solid #333",
+    borderBottom: `1px solid ${palette.tiBorder}`,
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#222"
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
   panelTitle: {
-    fontSize: "12px",
-    fontWeight: "600",
-    color: "#bbb"
+    fontSize: "11px",
+    fontWeight: "bold",
+    color: palette.tiAmber,
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
   },
   panelContent: {
     padding: "16px",
-    flex: 1
+    flex: 1,
   },
   btnPrimary: {
-    backgroundColor: "#1a89c8",
-    background: "#1a89c8",
-    backgroundImage: "none",
-    color: "white",
+    backgroundColor: palette.tiAmber,
+    color: palette.tiDark,
     border: "none",
-    padding: "6px 16px",
+    padding: "8px 20px",
     borderRadius: "4px",
     cursor: "pointer",
     fontSize: "13px",
-    fontWeight: "500"
+    fontWeight: "bold",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+    transition: "transform 0.1s",
   },
   btnSecondary: {
-    backgroundColor: "#1c1f24",
-    background: "#1c1f24",
-    backgroundImage: "none",
-    color: "#e1e8f0",
-    border: "1px solid #29313a",
-    padding: "6px 12px",
+    backgroundColor: palette.tiFuncBlue,
+    backgroundImage: RIDGED_BG,
+    color: "white",
+    border: `1px solid ${palette.tiBorder}`,
+    padding: "8px 16px",
     borderRadius: "4px",
     cursor: "pointer",
-    fontSize: "13px"
+    fontSize: "13px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
   },
   btnDanger: {
     backgroundColor: "#a11b1b",
-    background: "#a11b1b",
-    backgroundImage: "none",
     color: "white",
-    border: "1px solid #c02424",
-    padding: "6px 12px",
+    border: "none",
+    padding: "8px 16px",
     borderRadius: "4px",
     cursor: "pointer",
-    fontSize: "13px"
+    fontSize: "13px",
   },
   btnTiny: {
-    backgroundColor: "#2a2a2a",
-    background: "#2a2a2a",
-    backgroundImage: "none",
+    backgroundColor: "rgba(0,0,0,0.3)",
     color: "#ccc",
-    border: "1px solid #444",
+    border: `1px solid ${palette.tiBorder}`,
     padding: "2px 6px",
     borderRadius: "2px",
     fontSize: "10px",
-    cursor: "pointer"
+    cursor: "pointer",
   },
   input: {
-    backgroundColor: "#0a0a0a",
-    border: "1px solid #333",
+    backgroundColor: "rgba(0,0,0,0.4)",
+    border: `1px solid ${palette.tiBorder}`,
     color: "#eee",
-    padding: "6px 10px",
+    padding: "8px 12px",
     borderRadius: "4px",
     fontSize: "13px",
-    width: "100%"
+    width: "100%",
+    boxShadow: "inset 0 1px 3px rgba(0,0,0,0.5)",
   },
   inputNarrow: {
-    backgroundColor: "#0a0a0a",
-    border: "1px solid #333",
-    color: "#eee",
+    backgroundColor: "rgba(0,0,0,0.4)",
+    border: `1px solid ${palette.tiBorder}`,
+    color: palette.tiLcdBg,
     padding: "4px 6px",
-    borderRadius: "4px",
-    fontSize: "12px",
-    width: "50px",
-    textAlign: "center"
+    borderRadius: "2px",
+    fontSize: "14px",
+    width: "60px",
+    textAlign: "right",
+    fontFamily: "monospace",
   },
   select: {
-    backgroundColor: "#2a2a2a",
-    border: "1px solid #444",
-    color: "#eee",
-    padding: "4px 8px",
-    borderRadius: "4px",
-    fontSize: "12px"
-  },
-  selectWide: {
-    backgroundColor: "#2a2a2a",
-    border: "1px solid #444",
-    color: "#eee",
+    backgroundColor: palette.tiFuncBlue,
+    border: `1px solid ${palette.tiBorder}`,
+    color: "white",
     padding: "4px 8px",
     borderRadius: "4px",
     fontSize: "12px",
-    width: "100%"
+    cursor: "pointer",
+  },
+  selectWide: {
+    backgroundColor: palette.tiFuncBlue,
+    border: `1px solid ${palette.tiBorder}`,
+    color: "white",
+    padding: "8px 12px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    width: "100%",
+    cursor: "pointer",
   },
   pill: {
     padding: "2px 8px",
-    backgroundColor: "#333",
+    backgroundColor: "rgba(0,0,0,0.3)",
     borderRadius: "10px",
     fontSize: "10px",
-    color: "#aaa"
+    color: palette.tiAmber,
   },
   dot: {
     width: "8px",
     height: "8px",
-    borderRadius: "50%"
+    borderRadius: "50%",
   },
   valueText: {
     fontSize: "13px",
-    fontWeight: "500"
+    fontWeight: "500",
   },
   kpi: {
-    fontSize: "16px",
+    fontSize: "18px",
     fontWeight: "bold",
     fontFamily: "monospace",
-    color: "#35c96a"
+    color: palette.tiAmber,
   },
   table: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px"
+    gap: "4px",
   },
   tableRow: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    padding: "4px 8px",
-    backgroundColor: "#222",
-    borderRadius: "4px"
+    padding: "6px 10px",
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: "4px",
   },
   cellSmall: {
     width: "40px",
     color: "#666",
     fontSize: "11px",
-    fontFamily: "monospace"
+    fontFamily: "monospace",
   },
   toggleRow: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    cursor: "pointer"
+    cursor: "pointer",
   },
   muted: {
     fontSize: "12px",
-    color: "#666"
+    color: "#666",
   },
   card: {
-    padding: "12px",
-    backgroundColor: "#222",
-    borderRadius: "4px",
-    border: "1px solid #333",
-    marginBottom: "8px"
+    padding: "16px",
+    backgroundColor: palette.tiDark,
+    borderRadius: "8px",
+    border: `1px solid ${palette.tiBorder}`,
+    marginBottom: "8px",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
   },
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
-    gap: "8px"
+    gap: "8px",
   },
   tile: {
     aspectRatio: "1/1",
-    backgroundColor: "#222",
-    border: "1px solid #333",
+    backgroundColor: palette.tiWhiteKey,
+    border: `1px solid ${palette.tiBorder}`,
     borderRadius: "4px",
     display: "flex",
     flexDirection: "column",
@@ -325,26 +365,27 @@ export const styles = {
     cursor: "pointer",
     padding: "8px",
     textAlign: "center",
-    transition: "all 0.1s"
+    transition: "all 0.1s",
+    color: palette.tiDark,
+    boxShadow: "0 2px 0 rgba(0,0,0,0.2)",
   },
   tileTitle: {
     fontSize: "12px",
     fontWeight: "bold",
-    marginBottom: "4px"
+    marginBottom: "4px",
   },
   tileMeta: {
     fontSize: "9px",
-    color: "#555"
+    color: "#666",
   },
   queueStrip: {
     height: "40px",
-    backgroundColor: "#111",
-    borderTop: "1px solid #333",
+    backgroundColor: palette.tiDark,
+    borderTop: `2px solid ${palette.tiAmber}`,
     marginTop: "20px",
     display: "flex",
     alignItems: "center",
     padding: "0 16px",
-    gap: "12px"
-  }
+    gap: "12px",
+  },
 } satisfies Record<string, CSSProperties>;
-

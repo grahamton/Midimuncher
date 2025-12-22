@@ -15,6 +15,7 @@ type EndpointDescriptor = {
   endpointId: string;
   name: string;
   direction: "in" | "out";
+  kind: "usb" | "ble" | "din" | "virtual";
 };
 
 export class WindowsMidiServicesBackend extends MidiBackend {
@@ -49,7 +50,11 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     const endpoint = this.endpoints.get(id);
     if (!runtime || !endpoint) return false;
 
-    const connection = await this.openEndpoint(runtime.session, endpoint.endpointId, "in");
+    const connection = await this.openEndpoint(
+      runtime.session,
+      endpoint.endpointId,
+      "in"
+    );
     if (!connection) return false;
 
     this.attachInputHandler(connection, id);
@@ -63,7 +68,11 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     const endpoint = this.endpoints.get(id);
     if (!runtime || !endpoint) return false;
 
-    const connection = await this.openEndpoint(runtime.session, endpoint.endpointId, "out");
+    const connection = await this.openEndpoint(
+      runtime.session,
+      endpoint.endpointId,
+      "out"
+    );
     if (!connection) return false;
 
     this.outputs.set(id, connection);
@@ -73,7 +82,9 @@ export class WindowsMidiServicesBackend extends MidiBackend {
   async send(portId: string, bytes: number[]): Promise<boolean> {
     const output =
       this.outputs.get(portId) ??
-      (await this.openOut(portId).then((ok) => (ok ? this.outputs.get(portId) : undefined)));
+      (await this.openOut(portId).then((ok) =>
+        ok ? this.outputs.get(portId) : undefined
+      ));
     if (!output) return false;
     try {
       this.emitToOutput(output, bytes);
@@ -122,8 +133,15 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     }
   }
 
-  private async createSession(module: any): Promise<Record<string, unknown> | null> {
-    const candidates = [module?.MidiSession, module?.Session, module?.default?.MidiSession, module?.default];
+  private async createSession(
+    module: any
+  ): Promise<Record<string, unknown> | null> {
+    const candidates = [
+      module?.MidiSession,
+      module?.Session,
+      module?.default?.MidiSession,
+      module?.default,
+    ];
     for (const candidate of candidates) {
       if (!candidate) continue;
       if (typeof candidate.create === "function") {
@@ -136,7 +154,9 @@ export class WindowsMidiServicesBackend extends MidiBackend {
       }
       if (typeof candidate === "function") {
         try {
-          const instance = await Promise.resolve(new candidate({ name: "MIDI Playground" }));
+          const instance = await Promise.resolve(
+            new candidate({ name: "MIDI Playground" })
+          );
           if (instance) return instance as Record<string, unknown>;
         } catch {
           // Keep looking.
@@ -159,10 +179,22 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     const inputs = await this.readEndpoints(session, "in");
     const outputs = await this.readEndpoints(session, "out");
     this.cachedPorts = {
-      inputs: inputs.map((p) => ({ id: p.portId, name: p.name, direction: "in" })),
-      outputs: outputs.map((p) => ({ id: p.portId, name: p.name, direction: "out" }))
+      inputs: inputs.map((p) => ({
+        id: p.portId,
+        name: p.name,
+        direction: "in",
+        kind: p.kind,
+      })),
+      outputs: outputs.map((p) => ({
+        id: p.portId,
+        name: p.name,
+        direction: "out",
+        kind: p.kind,
+      })),
     };
-    inputs.concat(outputs).forEach((endpoint) => this.endpoints.set(endpoint.portId, endpoint));
+    inputs
+      .concat(outputs)
+      .forEach((endpoint) => this.endpoints.set(endpoint.portId, endpoint));
   }
 
   private async readEndpoints(
@@ -171,8 +203,22 @@ export class WindowsMidiServicesBackend extends MidiBackend {
   ): Promise<EndpointDescriptor[]> {
     const methodNames =
       direction === "in"
-        ? ["listInputs", "listInputPorts", "listInputEndpoints", "getInputs", "getInputPorts", "inputs"]
-        : ["listOutputs", "listOutputPorts", "listOutputEndpoints", "getOutputs", "getOutputPorts", "outputs"];
+        ? [
+            "listInputs",
+            "listInputPorts",
+            "listInputEndpoints",
+            "getInputs",
+            "getInputPorts",
+            "inputs",
+          ]
+        : [
+            "listOutputs",
+            "listOutputPorts",
+            "listOutputEndpoints",
+            "getOutputs",
+            "getOutputPorts",
+            "outputs",
+          ];
 
     for (const name of methodNames) {
       const candidate = (session as any)[name];
@@ -192,10 +238,15 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     return [];
   }
 
-  private normalizeEndpoints(rawList: unknown, direction: "in" | "out"): EndpointDescriptor[] {
+  private normalizeEndpoints(
+    rawList: unknown,
+    direction: "in" | "out"
+  ): EndpointDescriptor[] {
     if (!Array.isArray(rawList)) return [];
     return rawList
-      .map((raw, idx) => this.normalizeEndpoint(raw as Record<string, unknown>, direction, idx))
+      .map((raw, idx) =>
+        this.normalizeEndpoint(raw as Record<string, unknown>, direction, idx)
+      )
       .filter((v): v is EndpointDescriptor => Boolean(v));
   }
 
@@ -222,11 +273,18 @@ export class WindowsMidiServicesBackend extends MidiBackend {
       `MIDI ${direction === "in" ? "In" : "Out"} ${idx}`;
 
     if (!endpointId) return null;
+
+    const isBle =
+      endpointId.toLowerCase().includes("ble") ||
+      name.toLowerCase().includes("bluetooth") ||
+      name.toLowerCase().includes("oxi one");
+
     return {
       portId: `${direction}:${endpointId}`,
       endpointId,
       name,
-      direction
+      direction,
+      kind: isBle ? "ble" : "usb",
     };
   }
 
@@ -237,8 +295,20 @@ export class WindowsMidiServicesBackend extends MidiBackend {
   ): Promise<unknown | null> {
     const openMethods =
       direction === "in"
-        ? ["openInput", "openInputPort", "openInputEndpoint", "openReceiver", "openIn"]
-        : ["openOutput", "openOutputPort", "openOutputEndpoint", "openSender", "openOut"];
+        ? [
+            "openInput",
+            "openInputPort",
+            "openInputEndpoint",
+            "openReceiver",
+            "openIn",
+          ]
+        : [
+            "openOutput",
+            "openOutputPort",
+            "openOutputEndpoint",
+            "openSender",
+            "openOut",
+          ];
 
     for (const method of openMethods) {
       const fn = (session as any)[method];
@@ -249,7 +319,12 @@ export class WindowsMidiServicesBackend extends MidiBackend {
 
     const generic = (session as any).openEndpoint ?? (session as any).open;
     if (typeof generic === "function") {
-      const opened = await this.tryOpen(generic, session, endpointId, direction);
+      const opened = await this.tryOpen(
+        generic,
+        session,
+        endpointId,
+        direction
+      );
       if (opened) return opened;
     }
 
@@ -285,12 +360,13 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     const listeners = [
       { type: "onmidimessage", assign: true },
       { type: "onmessage", assign: true },
-      { type: "ondata", assign: true }
+      { type: "ondata", assign: true },
     ];
 
     for (const listener of listeners) {
       if (listener.assign && listener.type in connection) {
-        (connection as any)[listener.type] = (evt: unknown) => emitPacket((evt as any)?.data ?? evt);
+        (connection as any)[listener.type] = (evt: unknown) =>
+          emitPacket((evt as any)?.data ?? evt);
         return;
       }
     }
@@ -298,18 +374,24 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     const adders: Array<[string, string]> = [
       ["addEventListener", "midimessage"],
       ["addEventListener", "message"],
-      ["addListener", "message"]
+      ["addListener", "message"],
     ];
     for (const [adder, evt] of adders) {
       if (typeof connection[adder] === "function") {
-        connection[adder](evt, (data: unknown) => emitPacket((data as any)?.data ?? data));
+        connection[adder](evt, (data: unknown) =>
+          emitPacket((data as any)?.data ?? data)
+        );
         return;
       }
     }
 
     if (typeof connection.on === "function") {
-      const maybeOn = connection as { on: (name: string, handler: (data: unknown) => void) => void };
-      ["midi", "message", "data"].forEach((event) => maybeOn.on(event, emitPacket));
+      const maybeOn = connection as {
+        on: (name: string, handler: (data: unknown) => void) => void;
+      };
+      ["midi", "message", "data"].forEach((event) =>
+        maybeOn.on(event, emitPacket)
+      );
       return;
     }
 
@@ -320,23 +402,42 @@ export class WindowsMidiServicesBackend extends MidiBackend {
 
   private emitToOutput(connection: any, bytes: number[]) {
     const buffer = Uint8Array.from(bytes);
-    const methods = ["send", "sendMessage", "sendMidiMessage", "sendPacket", "sendEvent", "sendBuffer", "write"];
+    const methods = [
+      "send",
+      "sendMessage",
+      "sendMidiMessage",
+      "sendPacket",
+      "sendEvent",
+      "sendBuffer",
+      "write",
+    ];
     for (const method of methods) {
       if (typeof connection[method] === "function") {
         connection[method](buffer);
         return;
       }
     }
-    if ("output" in connection && typeof (connection as any).output?.send === "function") {
+    if (
+      "output" in connection &&
+      typeof (connection as any).output?.send === "function"
+    ) {
       (connection as any).output.send(buffer);
       return;
     }
-    throw new Error("No send method found on Windows MIDI Services output connection");
+    throw new Error(
+      "No send method found on Windows MIDI Services output connection"
+    );
   }
 
   private closeConnection(connection: any) {
     if (!connection) return;
-    this.callFirst(connection, ["close", "disconnect", "dispose", "release", "shutdown"]);
+    this.callFirst(connection, [
+      "close",
+      "disconnect",
+      "dispose",
+      "release",
+      "shutdown",
+    ]);
   }
 
   private callFirst(target: Record<string, unknown>, methods: string[]) {
@@ -356,7 +457,8 @@ export class WindowsMidiServicesBackend extends MidiBackend {
   private extractBytes(payload: unknown): number[] {
     if (!payload) return [];
     if (payload instanceof Uint8Array) return Array.from(payload);
-    if (payload instanceof ArrayBuffer) return Array.from(new Uint8Array(payload));
+    if (payload instanceof ArrayBuffer)
+      return Array.from(new Uint8Array(payload));
     const data =
       (payload as any).bytes ??
       (payload as any).data ??
@@ -367,7 +469,8 @@ export class WindowsMidiServicesBackend extends MidiBackend {
     if (data instanceof Uint8Array) return Array.from(data);
     if (data instanceof ArrayBuffer) return Array.from(new Uint8Array(data));
     if (Array.isArray(data)) return data.map((v) => Number(v));
-    if (Array.isArray(payload as any)) return (payload as any).map((v: unknown) => Number(v));
+    if (Array.isArray(payload as any))
+      return (payload as any).map((v: unknown) => Number(v));
     return [];
   }
 }

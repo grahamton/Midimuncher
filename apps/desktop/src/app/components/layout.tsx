@@ -6,24 +6,46 @@ export function Page({ children }: { children: ReactNode }) {
   return <div style={styles.page}>{children}</div>;
 }
 
-export function PageHeader({ title, right }: { title: string; right?: ReactNode }) {
+export function PageHeader({
+  title,
+  subtitle,
+  right,
+}: {
+  title: ReactNode;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   return (
     <div style={styles.pageHeader}>
-      <h1 style={styles.pageTitle}>{title}</h1>
+      <div>
+        <h1 style={styles.pageTitle}>{title}</h1>
+        {subtitle && (
+          <p style={{ ...styles.muted, fontSize: 13, marginTop: 4 }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
       <div>{right}</div>
     </div>
   );
 }
 
-export function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+export function Panel({
+  title,
+  right,
+  children,
+}: {
+  title: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div style={styles.panel}>
       <div style={styles.panelHeader}>
-        <span style={styles.panelTitle}>{title}</span>
+        <div style={styles.panelTitle}>{title}</div>
         {right && <div>{right}</div>}
       </div>
       <div style={styles.panelContent}>{children}</div>
     </div>
   );
 }
-

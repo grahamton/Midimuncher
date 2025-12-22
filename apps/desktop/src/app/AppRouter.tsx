@@ -15,6 +15,7 @@ import {
   listSnapshotNames,
 } from "./snapshots/SnapshotsPage";
 import type { AppRouterProps } from "./appProps";
+import { ModulationPage } from "./modulation/ModulationPage";
 
 export function AppRouter(props: AppRouterProps) {
   const route = props.route;
@@ -30,6 +31,8 @@ export function AppRouter(props: AppRouterProps) {
           diagRunning={props.diagRunning}
           onRunDiagnostics={props.onRunDiagnostics}
           selectedOut={props.selectedOut}
+          onAddDevice={props.onAddDevice}
+          onQuickOxiSetup={props.onQuickOxiSetup}
         />
       );
     case "routes":
@@ -126,20 +129,22 @@ export function AppRouter(props: AppRouterProps) {
     case "chains":
       return (
         <ChainsPage
-          chainSteps={props.chainSteps}
-          playing={props.chainPlaying}
-          currentIndex={props.chainIndex}
-          quantize={props.snapshotQuantize}
-          onStart={props.onStartChain}
-          onStop={props.onStopChain}
-          onAddStep={props.onAddChainStep}
-          onRemoveStep={props.onRemoveChainStep}
-          onMoveStep={props.onMoveChainStep}
-          onUpdateBars={props.onUpdateChainBars}
+          state={props.snapshotChains}
+          onChange={props.setSnapshotChains}
+          snapshots={props.snapshots}
         />
       );
     case "settings":
       return <SettingsPage />;
+    case "modulation":
+      return (
+        <ModulationPage
+          state={props.modulationState}
+          devices={props.devices}
+          controls={props.controls}
+          onChange={props.setModulationState}
+        />
+      );
     case "help":
       // Maybe ControlLab is help?
       return <ControlLabPage />;

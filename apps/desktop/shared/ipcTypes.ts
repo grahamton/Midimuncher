@@ -3,13 +3,14 @@ import type {
   MidiMsg,
   SnapshotBurstLimit,
   SnapshotRecallStrategy,
-  SnapshotState
+  SnapshotState,
 } from "@midi-playground/core";
 
 export type MidiPortInfo = {
   id: string;
   name: string;
   direction: "in" | "out";
+  kind?: "usb" | "ble" | "din" | "virtual";
 };
 
 export type MidiPorts = {

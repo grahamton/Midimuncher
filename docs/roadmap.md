@@ -2,9 +2,9 @@
 
 Goal: Build a snapshot-driven performance controller in software, using the OXI One as the hardware router (app + OXI over USB MIDI, OXI routes DIN/TRS downstream). Platform: Windows with Electron/React front-end and dual MIDI backends (WinMM fallback, Windows MIDI Services when available).
 
-Current status (Dec 2025): Surfaces board and control primitives are live and emit mapped MIDI; mapping page has per-slot editing and the assignment wizard now writes to control slots; snapshot scheduler (queueing + cycle-aware commit + burst limiting) is live; Stage page has Launch (quantized), Drop (commit + optional macro ramp), and a morph/assign preview with rig strips. A new Stage/Performance layout (Neuzeit Drop + Condukt-inspired) is being iterated to unify scene launch, transition “Drop” fader, and rig-aware instrument strips for the OXI-driven setup (Monologue, MicroFreak, Pro VS Mini, Digitakt).
+Current status (Dec 2025): Release Candidate (v0.8.2-beta). Phase 6 (Multi-Chain Mode) and Phase 7 (OXI Integration) are fully implemented and verified. The application now supports complex performance timelines and tight hardware integration with the OXI One hub, including remote transport control and automated routing templates.
 
-Status vs goals: Phase 0–3 shipped (snapshots+Jump/Commit/morph/assign flows now complete); Phase 4 performance surfaces are moving with the Stage view prototype and Drop bundle work; Phase 7 OXI transport consumption is queued to align drops to clock/transport.
+Status vs goals: Phase 0–7 shipped; Phase 8 (Grid/DAW) and further refinement planned next.
 
 ## Phases
 
@@ -44,33 +44,28 @@ Status vs goals: Phase 0–3 shipped (snapshots+Jump/Commit/morph/assign flows n
   - Resizable controls: Fader/Knob/Crossfader/Button/StepGrid support flexible sizing via style props (1x2, 2x1 compatible).
   - Macro faders: "Macro Multi-Bind" in Assignment Wizard enables one control driving multiple targets with custom curves.
   - Assignment wizard: Instrument-aware picker to browse CCs by name and category; streamlined mapping workflow.
-  - (Deferred) Mixer template and full skin theming moved to future polish phase.
+  - Polish: UI now features collapsible LeftNavRail with Premium Lucide icons (Waveform, Cable, Sliders) and smooth transitions.
+  - Refactoring: `App.tsx` significantly reduced (~900 lines), state extraction to `useAppController` complete.
 
-- **Phase 5 - Software modulation + generative**
+- **Phase 5 - Software modulation + generative (done)**
 
-  - Software LFO engine: unlimited tempo-synced LFOs (sine/saw/square/random/S+H) assignable to any mapped parameter; per-LFO depth, phase, and polyrhythmic divisions.
-  - Parameter sequencer lanes: 16-32 step grids that emit CC/NRPN values; supports probability, density, velocity scaling, per-step curves, and lock steps to snapshots.
-  - Euclidean pattern generator for gates/notes and CC pulses; randomize/seed tools with per-lane dice and undo.
-  - Crossfader/XY macros for morphing between modulation scenes (e.g., LFO set A -> set B); scene store/recall slots.
+  - Software LFO engine: unlimited tempo-synced LFOs (sine/saw/square/random/S+H) assignable to any mapped parameter; per-LFO depth, phase, and polyrhythmic divisions. (DONE)
+  - Aesthetics: TI-31 Solar Calculator hardware theme applied globally (LCD text, ridged buttons, deep navy palette). (DONE)
+  - Parameter sequencer lanes: 16-32 step grids that emit CC/NRPN values; supports probability, density, velocity scaling, per-step curves, and lock steps to snapshots. (DONE)
+  - Euclidean pattern generator for gates/notes and CC pulses; randomize/seed tools with per-lane dice and undo. (DONE)
+  - Crossfader/XY macros for morphing between modulation scenes (e.g., LFO set A -> set B); scene store/recall slots. (DONE)
 
-- **Phase 6 - Chain mode**
+- **Phase 6 - Chain mode (done)**
 
   - Up to 20 chains, 64 steps each; step/auto-advance quantized to cycle boundaries.
-  - UI: chain editor (list of steps), transport controls.
+  - UI: chain editor (list of steps), transport controls, and renaming.
 
-- **Phase 7 - OXI integration**
+- **Phase 7 - OXI integration (done)**
 
-  - OXI configuration surfaced in docs and UI hints:
-    - USB mode: Device
-    - OXI Split (A/B/C ports) to expand available channels
-    - Thru expectations (avoid feedback loops)
-  - Transport control via OXI CC transport messages (requires CC Transport Msgs enabled on OXI):
-    - CC 105: Stop
-    - CC 106: Play
-    - CC 107: Record (toggle)
-  - OXI-aware templates and routing presets; port labeling/wizard.
-  - OXI sanity test (mode/firmware check, round-trip messages).
-  - Optional: consume OXI transport/clock to align cycles.
+  - OXI configuration surfaced in docs and UI hints (Setup Page Best Practices).
+  - Transport control via OXI CC transport messages (CC 105: Stop, 106: Play, 107: Record).
+  - OXI-aware routing presets ("OXI Quick Setup" wizard for Split mode).
+  - OXI Remote Transport controls added to the Top Bar for hardware playback sync.
 
 - **Phase 8 - Grid/DAW (optional)**
   - Grid view for notes/clip launch; Ableton/Bitwig templates after core perf features are solid.
@@ -82,6 +77,8 @@ Status vs goals: Phase 0–3 shipped (snapshots+Jump/Commit/morph/assign flows n
   - Backpressure/overflow handling in monitor; deterministic snapshot recall.
 - **P1 reliability**
   - Versioned project save format; autosave; crash-safe persistence.
+- **P1 Maintenance**
+  - Continuous QA passes (recent: Dec 2025 pass reduced God Object, verified tests/lints).
 - **P2 UX**
   - Onboarding wizard mirroring the workflow (gear + init project + add devices + map + snapshots).
 
@@ -94,9 +91,5 @@ Status vs goals: Phase 0–3 shipped (snapshots+Jump/Commit/morph/assign flows n
 
 ## Immediate tickets to open
 
-- UI primitives (P0): fader/knob/crossfader/button/step grid with resize/orientation presets, coarse/fine drag, and bi-directional value feedback. DoD: reusable components, unit snapshot of value rendering, event plumbing to mapping engine stub.
-- Assignment wizard (P0): instrument-aware picker (search/browse CC/NRPN), bulk bind to macros/pads with per-target curves and color tags. DoD: can multi-bind 3+ targets in one flow, writes bindings to mapping engine, preserves tags.
-- Snapshot morphing (P0): pads grid + crossfader with staged per-parameter curves; per-parameter slew config; rate-limit burst sends. DoD: morph between two saved states with per-parameter curves; sends rate-limited; visual feedback of current morph position.
-- Stage mode (P0): Stage page with scene launcher, Drop/transition fader, rig-aware instrument strips for OXI lanes 1–4, and global macros that fan out CCs across multiple synths. DoD: one-to-many macro routing works end-to-end, scene launches can quantize to clock/transport, UI reflects rig device health.
 - Software modulation (P0): LFO engine (shapes/divisions/depth/phase) and parameter sequencer lanes (probability/density/curves/lock to snapshots) with throughput guardrails. DoD: run 3 LFOs + 2 sequencer lanes concurrently without buffer overrun; per-lane on/off and depth.
 - Mixer template (P1): 8-16 channel layout with mute/solo, level/pan, and global send macros; theming hooks for stage/studio skins. DoD: template instantiates from device list; mutes/solos round-trip to mapping; global send macro drives multiple channels.

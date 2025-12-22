@@ -47,6 +47,7 @@ This repo will grow quickly. Keep the core loops fast and predictable.
 
 - `apps/desktop/src/app/App.tsx` previously mixed many concerns. It has now been refactored to delegate state and logic to `useAppController.ts`, but the UI render tree is still quite deep and could be further componentized.
 - Stage is now consolidated under the single implementation at `apps/desktop/src/app/StagePage.tsx` with helper pieces living inside `apps/desktop/src/app/stage/`, so the previous duplication has been removed.
+- **Phase 7 OXI Integration** (Dec 2025): Remote transport control (CC 105-107) and automated routing templates for OXI Split mode are live.
 
 ## Near-term refactor targets
 

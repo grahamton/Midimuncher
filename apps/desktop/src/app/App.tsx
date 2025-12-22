@@ -42,9 +42,20 @@ import {
   writeSnapshotToSlot,
 } from "./snapshots/SnapshotsPage";
 import { useAppController, defaultControls } from "./useAppController";
+import { ModulationRunner } from "./modulation/ModulationRunner";
 import { clampChannel, clampMidi } from "./lib/clamp";
 import { useMidiBridgeClock } from "../services/midiBridge";
 import { styles } from "./styles";
+import {
+  AudioWaveform,
+  Cable,
+  Sliders,
+  Play,
+  Link,
+  Camera,
+  Activity,
+  Settings,
+} from "lucide-react";
 
 const LOG_LIMIT = 100;
 const MAX_DEVICES = 8;
@@ -136,13 +147,12 @@ export function App() {
     setUseClockSync,
     followClockStart,
     setFollowClockStart,
-    chainSteps,
-    setChainSteps,
-    chainPlaying,
-    setChainPlaying,
-    chainIndex,
-    setChainIndex,
-    chainTimerRef,
+    snapshotChains,
+    setSnapshotChains,
+    onStartChain,
+    onStopChain,
+    onOxiTransport,
+    onQuickOxiSetup,
     controls,
     setControls,
     selectedControlId,
@@ -159,6 +169,8 @@ export function App() {
     learnTimerRef,
     sessionStatus,
     setSessionStatus,
+    modulationState,
+    setModulationState,
   } = useAppController();
 
   // -- Learn Logic --
@@ -475,112 +487,6 @@ export function App() {
     });
   }
 
-  // -- Chains --
-  function addChainStep() {
-    const activeSlotName = activeSnapshotId
-      ? findSnapshotSlot(activeSnapshotId, snapshotsState)?.slot.name ?? null
-      : null;
-    const snapshot = activeSlotName ?? snapshotsState.banks[0]?.slots[0]?.name;
-    if (!snapshot) return;
-    setChainSteps((current) => [
-      ...current,
-      {
-        snapshot,
-        bars: 4,
-        snapshotId: findSnapshotIdByName(snapshot, snapshotsState),
-      },
-    ]);
-  }
-
-  function removeChainStep(index: number) {
-    setChainSteps((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function moveChainStep(from: number, to: number) {
-    setChainSteps((current) => {
-      if (to < 0 || to >= current.length) return current;
-      const next = [...current];
-      const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
-      return next;
-    });
-  }
-
-  function updateChainBars(index: number, bars: number) {
-    setChainSteps((prev) =>
-      prev.map((s, i) =>
-        i === index ? { ...s, bars: Math.max(1, Math.min(64, bars)) } : s
-      )
-    );
-  }
-
-  function playChainStep(idx: number) {
-    if (idx >= chainSteps.length) {
-      // Loop or stop
-      if (chainSteps.length > 0) {
-        playChainStep(0); // Loop
-      } else {
-        setChainPlaying(false);
-        setChainIndex(0);
-      }
-      return;
-    }
-
-    setChainIndex(idx);
-    const step = chainSteps[idx];
-    const snapshotId = findSnapshotIdByName(step.snapshot, snapshotsState);
-
-    if (snapshotId) {
-      // Trigger generic snapshot
-      setActiveSnapshotId(snapshotId);
-      setPendingSnapshotId(snapshotId);
-      void scheduleSnapshot(snapshotId);
-    }
-
-    const effectiveBpm = useClockSync && clockBpm ? clockBpm : tempoBpm;
-    const barMs = (60000 / Math.max(1, effectiveBpm)) * 4;
-    const delayMs = barMs * Math.max(1, step.bars);
-
-    chainTimerRef.current = window.setTimeout(() => {
-      playChainStep((idx + 1) % chainSteps.length); // Loop by default
-    }, delayMs);
-  }
-
-  function startChain() {
-    if (chainSteps.length === 0) return;
-    if (chainTimerRef.current) {
-      window.clearTimeout(chainTimerRef.current);
-    }
-    setChainPlaying(true);
-    playChainStep(0);
-  }
-
-  function stopChain() {
-    if (chainTimerRef.current) {
-      window.clearTimeout(chainTimerRef.current);
-      chainTimerRef.current = null;
-    }
-    setChainPlaying(false);
-    setChainIndex(0);
-    setPendingSnapshotId(null);
-  }
-
-  // Chain start/stop from MIDI needs to be handled via effect in hook or here.
-  // Hook has listener but commented out calls.
-  // So we adding listener here is best?
-  // But hook already subscribes to events.
-  // Let's add an effect here just for the chain start logic if followClockStart is true.
-  useEffect(() => {
-    if (!midiApi) return;
-    const unsub = midiApi.onEvent((evt) => {
-      if (followClockStart) {
-        if (evt.msg.t === "start") startChain();
-        if (evt.msg.t === "stop") stopChain();
-      }
-    });
-    return unsub;
-  }, [midiApi, followClockStart, chainSteps]); // chainSteps dependency for closure freshness
-
   // -- Project IO --
   async function flushProjectNow() {
     if (!midiApi) return;
@@ -685,6 +591,48 @@ export function App() {
     <div style={styles.window}>
       <AppChrome>
         <TopStatusBar
+          actions={
+            <div style={{ ...styles.row, gap: 4 }}>
+              <button
+                style={styles.btnTiny}
+                onClick={() => onOxiTransport("stop")}
+                title="OXI Stop"
+              >
+                <div style={{ width: 8, height: 8, background: "#ef4444" }} />
+              </button>
+              <button
+                style={{ ...styles.btnTiny, background: "#10b981" }}
+                onClick={() => onOxiTransport("start")}
+                title="OXI Play"
+              >
+                <Play size={10} fill="white" />
+              </button>
+              <button
+                style={{ ...styles.btnTiny, borderRadius: "50%" }}
+                onClick={() => onOxiTransport("record")}
+                title="OXI Record"
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "#ef4444",
+                  }}
+                />
+              </button>
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 800,
+                  color: "#64748b",
+                  marginLeft: 4,
+                }}
+              >
+                OXI REMOTE
+              </span>
+            </div>
+          }
           saveLabel={
             saveStatus === "saving"
               ? "Saving..."
@@ -725,9 +673,7 @@ export function App() {
             route={activeView}
             onChangeRoute={(next: AppView) => setActiveView(next)}
             onPanic={async () => {
-              // Panic logic needs port access, easiest to implement here
               if (!midiApi) return;
-              // Simple panic
               ports.outputs.forEach((p) => {
                 midiApi.send({
                   portId: p.id,
@@ -739,6 +685,33 @@ export function App() {
                 });
               });
             }}
+            items={[
+              {
+                id: "setup",
+                label: "Setup",
+                icon: <AudioWaveform size={20} />,
+              },
+              { id: "routes", label: "Routes", icon: <Cable size={20} /> },
+              { id: "mapping", label: "Mapping", icon: <Sliders size={20} /> },
+              {
+                id: "modulation",
+                label: "Modulation",
+                icon: <Activity size={20} />,
+              },
+              { id: "stage", label: "Stage", icon: <Play size={20} /> },
+              { id: "chains", label: "Chains", icon: <Link size={20} /> },
+              {
+                id: "snapshots",
+                label: "Snapshots",
+                icon: <Camera size={20} />,
+              },
+              { id: "monitor", label: "Monitor", icon: <Activity size={20} /> },
+              {
+                id: "settings",
+                label: "Settings",
+                icon: <Settings size={20} />,
+              },
+            ]}
           />
           <MainContentArea>
             <AppRouter
@@ -780,6 +753,14 @@ export function App() {
               onQuickTest={(portId: string, ch: number) =>
                 sendQuickNote(portId, ch, note)
               }
+              setModulationState={setModulationState}
+              modulationState={modulationState}
+              snapshotChains={snapshotChains}
+              setSnapshotChains={setSnapshotChains}
+              onStartChain={onStartChain}
+              onStopChain={onStopChain}
+              onOxiTransport={onOxiTransport}
+              onQuickOxiSetup={onQuickOxiSetup}
               onQuickCc={(
                 portId: string,
                 ch: number,
@@ -876,15 +857,7 @@ export function App() {
                   Math.min(Math.max(Math.round(bars), 1), 32)
                 )
               }
-              chainSteps={chainSteps}
-              chainPlaying={chainPlaying}
-              chainIndex={chainIndex}
-              onStartChain={startChain}
-              onStopChain={stopChain}
-              onAddChainStep={addChainStep}
-              onRemoveChainStep={removeChainStep}
-              onMoveChainStep={moveChainStep}
-              onUpdateChainBars={updateChainBars}
+              onAddDevice={quickStart}
             />
           </MainContentArea>
         </BodySplitPane>

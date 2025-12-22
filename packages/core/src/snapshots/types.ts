@@ -1,4 +1,5 @@
 import type { MidiMsg } from "../midi/types";
+import type { ModulationEngineState } from "../modulation/types";
 
 export type SnapshotNoteState = { note: number; vel: number };
 
@@ -25,6 +26,7 @@ export type SnapshotState = {
   bpm: number | null;
   notes: string | null;
   devices: SnapshotDeviceState[];
+  modulation?: ModulationEngineState;
 };
 
 export type SnapshotRecallStrategy = "jump" | "commit";

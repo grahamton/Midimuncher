@@ -1,11 +1,21 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
 
 :root {
-  color-scheme: light;
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0f172a;
+  color-scheme: dark;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #1e2433; /* tiBody */
   color: #e2e8f0;
   line-height: 1.5;
+
+  /* TI Palette variables */
+  --ti-body: #1e2433;
+  --ti-dark: #131821;
+  --ti-amber: #fdb813;
+  --ti-func-blue: #5a7fa1;
+  --ti-white-key: #f4f1e5;
+  --ti-lcd-bg: #a9b29e;
+  --ti-lcd-text: #21231e;
 }
 
 * {
@@ -14,6 +24,7 @@
 
 body {
   margin: 0;
+  background-color: var(--ti-body);
 }
 
 .page {
@@ -34,6 +45,7 @@ body {
   margin: 6px 0 4px;
   font-size: 28px;
   letter-spacing: -0.02em;
+  color: var(--ti-amber);
 }
 
 .hero-actions {
@@ -48,8 +60,8 @@ body {
 }
 
 .nav .active {
-  border-color: #38bdf8;
-  color: #38bdf8;
+  border-color: var(--ti-amber);
+  color: var(--ti-amber);
 }
 
 .mapping-grid {
@@ -63,7 +75,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 10px;
   padding: 10px;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--ti-dark);
 }
 
 .slot-head {
@@ -91,7 +103,7 @@ body {
 }
 
 .eyebrow {
-  color: #38bdf8;
+  color: var(--ti-amber);
   margin: 0;
   text-transform: uppercase;
   font-weight: 600;
@@ -105,7 +117,7 @@ body {
 }
 
 .panel {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ti-dark);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   padding: 18px 18px 8px;
@@ -121,6 +133,10 @@ body {
 
 .panel h2 {
   margin: 0 0 6px;
+  color: var(--ti-amber);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .panel p {
@@ -139,8 +155,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
   padding: 14px;
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(4px);
+  background: var(--ti-dark);
 }
 
 .card-head {
@@ -163,9 +178,9 @@ input[type="number"],
 input[type="text"] {
   width: 100%;
   padding: 10px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.3);
   color: inherit;
 }
 
@@ -182,14 +197,19 @@ input[type="range"] {
 }
 
 button {
-  background: linear-gradient(90deg, #22c55e, #2dd4bf);
-  color: #0f172a;
+  background: var(--ti-func-blue);
+  color: white;
   font-weight: 700;
   border: none;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition: transform 0.08s ease, filter 0.1s ease;
+}
+
+button.primary {
+  background: var(--ti-amber);
+  color: var(--ti-dark);
 }
 
 button:disabled {
@@ -199,7 +219,7 @@ button:disabled {
 }
 
 button:hover:not(:disabled) {
-  filter: brightness(1.05);
+  filter: brightness(1.1);
   transform: translateY(-1px);
 }
 
@@ -212,9 +232,9 @@ button.ghost {
 .pill {
   display: inline-flex;
   padding: 4px 8px;
-  background: rgba(34, 197, 94, 0.16);
-  border: 1px solid rgba(34, 197, 94, 0.4);
-  color: #c8facc;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ti-amber);
+  color: var(--ti-amber);
   border-radius: 999px;
   font-size: 12px;
 }

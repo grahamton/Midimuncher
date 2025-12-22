@@ -13,7 +13,10 @@ export class ProjectStore {
   private pendingSave: Promise<void> | null = null;
 
   constructor(opts: ProjectStoreOptions) {
-    this.storage = new ProjectStorage({ dir: opts.dir, filename: "project.json" });
+    this.storage = new ProjectStorage({
+      dir: opts.dir,
+      filename: "project.json",
+    });
   }
 
   async load(): Promise<ProjectDoc> {
@@ -29,9 +32,9 @@ export class ProjectStore {
 
   setState(state: ProjectState): void {
     const doc: ProjectDoc = {
-      schemaVersion: 2,
+      schemaVersion: 4,
       updatedAt: Date.now(),
-      state
+      state,
     };
     this.current = doc;
     this.scheduleSave();
@@ -46,6 +49,10 @@ export class ProjectStore {
   }
 
   async flush(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
     if (!this.current) return;
     if (this.pendingSave) return this.pendingSave;
 

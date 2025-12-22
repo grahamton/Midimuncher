@@ -24,7 +24,15 @@ import {
   type ProjectState,
   type SnapshotMode,
   type SnapshotQuantize,
+  defaultModulationState,
 } from "../../shared/projectTypes";
+import {
+  type ModulationEngineState,
+  type ModulationTarget,
+  type SnapshotChainState,
+  type SnapshotChain,
+} from "@midi-playground/core";
+import { SnapshotChainRunner } from "@midi-playground/core";
 import { useMidiBridgeClock } from "../services/midiBridge";
 import {
   findSnapshotSlot,
@@ -142,13 +150,16 @@ export function useAppController() {
     defaults.followClockStart
   );
 
-  // Chains
-  const [chainSteps, setChainSteps] = useState<ChainStep[]>(
-    defaults.chainSteps
+  // Modulation
+  const [modulationState, setModulationState] = useState<ModulationEngineState>(
+    defaults.modulation
   );
-  const [chainPlaying, setChainPlaying] = useState(false);
-  const chainTimerRef = useRef<number | null>(null);
-  const [chainIndex, setChainIndex] = useState<number>(0);
+
+  // Snapshot Chains (V4)
+  const [snapshotChains, setSnapshotChains] = useState<SnapshotChainState>(
+    defaults.snapshotChains
+  );
+  const chainRunnerRef = useRef<SnapshotChainRunner | null>(null);
 
   // Controls & Mapping
   const [controls, setControls] = useState<ControlElement[]>(() =>
@@ -315,11 +326,10 @@ export function useAppController() {
           fadeMs: nextFadeMs,
         });
 
-        setChainSteps(
-          Array.isArray(state.chainSteps) && state.chainSteps.length
-            ? state.chainSteps
-            : defaults.chainSteps
-        );
+        setSnapshotChains(state.snapshotChains ?? defaults.snapshotChains);
+
+        // Modulation hydration
+        setModulationState(state.modulation ?? defaults.modulation);
       }
 
       await refreshBackends();
@@ -432,19 +442,27 @@ export function useAppController() {
       setLog((current) => [evt, ...current].slice(0, LOG_LIMIT));
 
       if (evt.msg.t === "start" && followClockStart) {
-        // startChain(); // Defined below, we might need to expose this via ref or move logic
+        onStartChain();
       }
       if (evt.msg.t === "stop" && followClockStart) {
-        // stopChain();
+        onStopChain();
+      }
+
+      // OXI CC Transport Recruitment
+      if (evt.msg.t === "cc" && followClockStart) {
+        if (evt.msg.cc === 105 && evt.msg.val > 0) onStopChain();
+        if (evt.msg.cc === 106 && evt.msg.val > 0) onStartChain();
+        // Record (107) toggle or status? OXI usually toggles.
+        // For now, only Play/Stop are critical for chain sync.
       }
     });
 
     const unsubscribeSnapshotStatus = midiApi.onSnapshotStatus((status) => {
       setSnapshotQueueStatus(status);
-      if (status.queueLength === 0) {
-        setPendingSnapshotId(null);
-      } else if (status.activeSnapshotId) {
+      if (status.activeSnapshotId) {
         setPendingSnapshotId(status.activeSnapshotId);
+      } else if (status.queueLength === 0) {
+        setPendingSnapshotId(null);
       }
     });
 
@@ -493,7 +511,8 @@ export function useAppController() {
       stageDropStepMs,
       stageDropPerSendSpacingMs,
       snapshots: snapshotsState,
-      chainSteps,
+      modulation: modulationState,
+      snapshotChains,
       devices,
       routes,
       controls,
@@ -561,9 +580,10 @@ export function useAppController() {
     stageDropToValue,
     stageDropDurationMs,
     stageDropStepMs,
+    stageDropStepMs,
     stageDropPerSendSpacingMs,
     snapshotsState,
-    chainSteps,
+    snapshotChains,
     forceChannelEnabled,
     routeChannel,
     allowNotes,
@@ -573,7 +593,9 @@ export function useAppController() {
     allowClock,
     clockDiv,
     note,
+    note,
     ccValue,
+    modulationState,
   ]);
 
   // -- Session Status --
@@ -588,6 +610,97 @@ export function useAppController() {
       cancelled = true;
     };
   }, [midiApi]);
+
+  // Sync SnapshotChainRunner
+  useEffect(() => {
+    if (!chainRunnerRef.current) {
+      chainRunnerRef.current = new SnapshotChainRunner(snapshotChains, {
+        onTriggerSnapshot: (id) => {
+          // Internal call to schedule snapshot
+          if (midiApi) {
+            midiApi
+              .scheduleSnapshot({
+                snapshotId: id,
+                strategy: snapshotsState.strategy,
+                fadeMs: snapshotsState.fadeMs,
+                snapshot: { devices: [] } as any, // The backend will look up by ID
+              })
+              .catch(console.error);
+          }
+        },
+        onStepChanged: (index) => {
+          setSnapshotChains((prev) => ({ ...prev, currentIndex: index }));
+        },
+        onEnd: () => {
+          setSnapshotChains((prev) => ({ ...prev, playing: false }));
+        },
+      });
+    } else {
+      chainRunnerRef.current.setState(snapshotChains);
+    }
+  }, [snapshotChains, midiApi, snapshotsState.strategy]);
+
+  // Tick Chain Runner on Clock
+  useEffect(() => {
+    if (snapshotChains.playing && chainRunnerRef.current) {
+      // Calculate bars from ticks
+      chainRunnerRef.current.tick(clock.tickCount / (clock.ppqn * 4));
+    }
+  }, [clock.tickCount, snapshotChains.playing]);
+
+  const onStartChain = () => {
+    setSnapshotChains((prev) => ({ ...prev, playing: true }));
+    if (chainRunnerRef.current) {
+      chainRunnerRef.current.start(clock.tickCount / (clock.ppqn * 4));
+    }
+  };
+
+  const onStopChain = () => {
+    setSnapshotChains((prev) => ({ ...prev, playing: false }));
+    if (chainRunnerRef.current) {
+      chainRunnerRef.current.stop();
+    }
+  };
+  const onOxiTransport = (cmd: "start" | "stop" | "record") => {
+    if (!midiApi || !selectedOut) return;
+    const cc = cmd === "stop" ? 105 : cmd === "start" ? 106 : 107;
+    void midiApi.send({
+      portId: selectedOut,
+      msg: { t: "cc", ch: 1, cc, val: 127 },
+    });
+    // Local feedback
+    if (cmd === "start") onStartChain();
+    if (cmd === "stop") onStopChain();
+  };
+
+  const onQuickOxiSetup = () => {
+    if (!selectedIn || !selectedOut) return;
+    // Create 3 routes for OXI Split A/B/C
+    const newRoutes: RouteConfig[] = [
+      {
+        id: `oxi-a-${Date.now()}`,
+        fromId: selectedIn,
+        toId: selectedOut,
+        channelMode: "passthrough",
+        filter: { allowTypes: undefined },
+      },
+      {
+        id: `oxi-b-${Date.now() + 1}`,
+        fromId: selectedIn,
+        toId: selectedOut,
+        channelMode: "passthrough",
+        filter: { allowTypes: undefined },
+      },
+      {
+        id: `oxi-c-${Date.now() + 2}`,
+        fromId: selectedIn,
+        toId: selectedOut,
+        channelMode: "passthrough",
+        filter: { allowTypes: undefined },
+      },
+    ];
+    setRoutes((current) => [...current, ...newRoutes]);
+  };
 
   return {
     midiApi,
@@ -639,6 +752,10 @@ export function useAppController() {
     setDiagMessage,
     diagRunning,
     setDiagRunning,
+    onStartChain,
+    onStopChain,
+    onOxiTransport,
+    onQuickOxiSetup,
     activeView,
     setActiveView,
     snapshotsState,
@@ -675,13 +792,9 @@ export function useAppController() {
     setUseClockSync,
     followClockStart,
     setFollowClockStart,
-    chainSteps,
-    setChainSteps,
-    chainPlaying,
-    setChainPlaying,
-    chainIndex,
-    setChainIndex,
-    chainTimerRef,
+    snapshotChains,
+    setSnapshotChains,
+    chainRunnerRef,
     controls,
     setControls,
     selectedControlId,
@@ -698,5 +811,7 @@ export function useAppController() {
     learnTimerRef,
     sessionStatus,
     setSessionStatus,
+    modulationState,
+    setModulationState,
   };
 }

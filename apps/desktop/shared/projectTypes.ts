@@ -7,6 +7,9 @@ import {
   type SnapshotRecallStrategy,
   type SnapshotState,
   type SequencerWorldState,
+  type ModulationEngineState,
+  type LFOConfig,
+  type ModulationTarget,
 } from "@midi-playground/core";
 import type { RouteConfig } from "./ipcTypes";
 
@@ -37,7 +40,8 @@ export type AppView =
   | "snapshots"
   | "stage"
   | "chains"
-  | "settings";
+  | "settings"
+  | "modulation";
 
 export type SequencerTransportState = {
   bpm: number;
@@ -103,7 +107,29 @@ export type SnapshotsState = {
   captureNotes: string;
   banks: SnapshotBankState[];
 };
-export type ChainStep = { snapshot: string; bars: number };
+
+export type SnapshotChainStep = {
+  id: string;
+  snapshotId: string | null;
+  snapshotName: string;
+  bars: number;
+};
+
+export type SnapshotChain = {
+  id: string;
+  name: string;
+  steps: SnapshotChainStep[];
+  loop: boolean;
+};
+
+export type SnapshotChainState = {
+  chains: SnapshotChain[];
+  activeChainId: string | null;
+  playing: boolean;
+  currentIndex: number;
+};
+
+export type ChainStep = { snapshot: string; bars: number }; // Legacy V1-V3
 
 export type ProjectStateV1 = {
   backendId: string | null;
@@ -122,12 +148,11 @@ export type ProjectStateV1 = {
   stageDropDurationMs: number;
   stageDropStepMs: number;
   stageDropPerSendSpacingMs: number;
-  activeView: Exclude<AppView, "snapshots">;
+  activeView: Exclude<AppView, "snapshots" | "modulation">;
   selectedDeviceId: string | null;
   devices: DeviceConfig[];
   routes: RouteConfig[];
   controls: ControlElement[];
-  chainSteps: ChainStep[];
   selectedControlId: string | null;
   sequencer: SequencerProjectState;
   ui: {
@@ -165,8 +190,28 @@ export type ProjectDocV2 = {
   state: ProjectStateV2;
 };
 
-export type ProjectState = ProjectStateV2;
-export type ProjectDoc = ProjectDocV2;
+export type ProjectStateV3 = ProjectStateV2 & {
+  modulation: ModulationEngineState;
+};
+
+export type ProjectDocV3 = {
+  schemaVersion: 3;
+  updatedAt: number;
+  state: ProjectStateV3;
+};
+
+export type ProjectStateV4 = ProjectStateV3 & {
+  snapshotChains: SnapshotChainState;
+};
+
+export type ProjectDocV4 = {
+  schemaVersion: 4;
+  updatedAt: number;
+  state: ProjectStateV4;
+};
+
+export type ProjectState = ProjectStateV4;
+export type ProjectDoc = ProjectDocV4;
 
 const DEFAULT_SNAPSHOT_BANK_COUNT = 20;
 const DEFAULT_SNAPSHOT_SLOTS_PER_BANK = 20;
@@ -191,7 +236,7 @@ function defaultSnapshotSlots(bankIndex: number): SnapshotSlotState[] {
     id: `slot-${idx + 1}`,
     name:
       bankIndex === 0
-        ? (BANK_A_DEFAULT_NAMES[idx] ?? `Slot ${idx + 1}`)
+        ? BANK_A_DEFAULT_NAMES[idx] ?? `Slot ${idx + 1}`
         : `Slot ${idx + 1}`,
     lastCapturedAt: null,
     snapshot: null,
@@ -316,7 +361,6 @@ function defaultProjectStateV1(): ProjectStateV1 {
     selectedDeviceId: null,
     devices: [],
     routes: [],
-    chainSteps: defaultChainSteps(),
     controls: [],
     selectedControlId: null,
     sequencer: defaultSequencerState(),
@@ -339,17 +383,51 @@ function defaultProjectStateV1(): ProjectStateV1 {
   };
 }
 
-export function defaultProjectState(): ProjectStateV2 {
+export function defaultModulationState(): ModulationEngineState {
+  return {
+    sources: [],
+    targets: [],
+    scenes: [],
+    activeSceneId: null,
+    targetSceneId: null,
+    morph: 0,
+  };
+}
+
+export function defaultSnapshotChainState(): SnapshotChainState {
+  const chains: SnapshotChain[] = [
+    {
+      id: "chain-1",
+      name: "Chain 1",
+      loop: true,
+      steps: [
+        { id: "step-1", snapshotId: null, snapshotName: "INTRO", bars: 4 },
+        { id: "step-2", snapshotId: null, snapshotName: "VERSE", bars: 8 },
+        { id: "step-3", snapshotId: null, snapshotName: "CHORUS 1", bars: 8 },
+      ],
+    },
+  ];
+  return {
+    chains,
+    activeChainId: "chain-1",
+    playing: false,
+    currentIndex: 0,
+  };
+}
+
+export function defaultProjectState(): ProjectStateV4 {
   return {
     ...defaultProjectStateV1(),
     activeView: "setup",
     snapshots: defaultSnapshotsState(),
+    modulation: defaultModulationState(),
+    snapshotChains: defaultSnapshotChainState(),
   };
 }
 
-export function defaultProjectDoc(): ProjectDocV2 {
+export function defaultProjectDoc(): ProjectDocV4 {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     updatedAt: Date.now(),
     state: defaultProjectState(),
   };
@@ -575,7 +653,10 @@ function coerceSnapshotSlot(
   };
 }
 
-function coerceSnapshotBank(raw: unknown, fallback: SnapshotBankState): SnapshotBankState {
+function coerceSnapshotBank(
+  raw: unknown,
+  fallback: SnapshotBankState
+): SnapshotBankState {
   const rec = (
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
   ) as Record<string, unknown>;
@@ -612,7 +693,9 @@ function coerceSnapshotsState(raw: unknown): SnapshotsState {
 
   const activeBankId =
     typeof rec.activeBankId === "string"
-      ? (banks.some((b) => b.id === rec.activeBankId) ? rec.activeBankId : defaults.activeBankId)
+      ? banks.some((b) => b.id === rec.activeBankId)
+        ? rec.activeBankId
+        : defaults.activeBankId
       : defaults.activeBankId;
 
   const strategy: SnapshotRecallStrategy =
@@ -627,10 +710,15 @@ function coerceSnapshotsState(raw: unknown): SnapshotsState {
       : {}
   ) as Record<string, unknown>;
   const burst: SnapshotBurstLimit = {
-    intervalMs: Math.max(1, clampMs(burstRec.intervalMs, burstDefaults.intervalMs)),
+    intervalMs: Math.max(
+      1,
+      clampMs(burstRec.intervalMs, burstDefaults.intervalMs)
+    ),
     maxPerInterval: Math.max(
       1,
-      Math.round(asNumberOr(burstRec.maxPerInterval, burstDefaults.maxPerInterval))
+      Math.round(
+        asNumberOr(burstRec.maxPerInterval, burstDefaults.maxPerInterval)
+      )
     ),
   };
 
@@ -657,7 +745,10 @@ function sanitizeSnapshotQuantize(
     : fallback;
 }
 
-function sanitizeSnapshotMode(value: unknown, fallback: SnapshotMode): SnapshotMode {
+function sanitizeSnapshotMode(
+  value: unknown,
+  fallback: SnapshotMode
+): SnapshotMode {
   return value === "commit" || value === "jump" ? value : fallback;
 }
 
@@ -685,17 +776,20 @@ function sanitizeAppView(raw: unknown): AppView {
     view === "snapshots" ||
     view === "stage" ||
     view === "chains" ||
-    view === "settings"
+    view === "settings" ||
+    view === "modulation"
     ? view
     : "setup";
 }
 
-function sanitizeAppViewV1(raw: unknown): Exclude<AppView, "snapshots"> {
+function sanitizeAppViewV1(
+  raw: unknown
+): Exclude<AppView, "snapshots" | "modulation"> {
   const view = sanitizeAppView(raw);
-  return view === "snapshots" ? "setup" : view;
+  return view === "snapshots" || view === "modulation" ? "setup" : view;
 }
 
-function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
+function coerceProjectStateV1(rawState: unknown): any {
   const stateDefaults = defaultProjectStateV1();
   const raw = (
     rawState && typeof rawState === "object"
@@ -735,7 +829,15 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
   );
   const stageDropControlId = asStringOrNull((raw as any)?.stageDropControlId);
   const stageDropToValue = Math.min(
-    Math.max(Math.round(asNumberOr((raw as any)?.stageDropToValue, stateDefaults.stageDropToValue)), 0),
+    Math.max(
+      Math.round(
+        asNumberOr(
+          (raw as any)?.stageDropToValue,
+          stateDefaults.stageDropToValue
+        )
+      ),
+      0
+    ),
     127
   );
   const stageDropDurationMs = clampMs(
@@ -762,19 +864,15 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     id: typeof d.id === "string" ? d.id : `device-${idx + 1}`,
     name: typeof d.name === "string" ? d.name : `Device ${idx + 1}`,
     instrumentId: asStringOrNull(d.instrumentId),
-    lane: Math.min(Math.max(Math.round(asNumberOr(d.lane, idx + 1)), 1), MAX_DEVICES),
+    lane: Math.min(
+      Math.max(Math.round(asNumberOr(d.lane, idx + 1)), 1),
+      MAX_DEVICES
+    ),
     inputId: asStringOrNull(d.inputId),
     outputId: asStringOrNull(d.outputId),
     channel: Math.min(Math.max(Math.round(asNumberOr(d.channel, 1)), 1), 16),
     clockEnabled: asBooleanOr(d.clockEnabled, false),
   }));
-
-  const chainSteps: ChainStep[] = asArray(raw.chainSteps)
-    .slice(0, 64)
-    .map((s, idx) => coerceChainStep(s, idx))
-    .filter((v): v is ChainStep => Boolean(v));
-  const safeChainSteps =
-    chainSteps.length > 0 ? chainSteps : stateDefaults.chainSteps;
 
   return {
     backendId: asStringOrNull(raw.backendId),
@@ -798,9 +896,9 @@ function coerceProjectStateV1(rawState: unknown): ProjectStateV1 {
     devices,
     routes: asArray<RouteConfig>(raw.routes),
     controls: asArray<ControlElement>(raw.controls),
-    chainSteps: safeChainSteps,
     selectedControlId: asStringOrNull(raw.selectedControlId),
     sequencer,
+    chainSteps: (raw as any).chainSteps,
     ui: {
       routeBuilder: {
         forceChannelEnabled: asBooleanOr(
@@ -890,6 +988,175 @@ function upgradeToV2(state: ProjectStateV1): ProjectStateV2 {
   };
 }
 
+function upgradeToV3(state: ProjectStateV2): ProjectStateV3 {
+  return {
+    ...state,
+    modulation: defaultModulationState(),
+  };
+}
+
+function upgradeToV4(state: ProjectStateV3): ProjectStateV4 {
+  // Migration: take legacy chainSteps and wrap into the first snapshotChain
+  const initialChain: SnapshotChain = {
+    id: "chain-legacy",
+    name: "Imported Chain",
+    loop: true,
+    steps:
+      (state as any).chainSteps?.map((s: any, idx: number) => ({
+        id: `step-${idx + 1}`,
+        snapshotId: null,
+        snapshotName: s.snapshot,
+        bars: s.bars,
+      })) ?? [],
+  };
+
+  return {
+    ...state,
+    snapshotChains: {
+      chains: [initialChain],
+      activeChainId: "chain-legacy",
+      playing: false,
+      currentIndex: 0,
+    },
+  };
+}
+
+function coerceLFOConfig(raw: unknown, id: string): LFOConfig {
+  const rec = (raw && typeof raw === "object" ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  return {
+    id: typeof rec.id === "string" ? rec.id : id,
+    type: "lfo",
+    enabled: asBooleanOr(rec.enabled, true),
+    label: typeof rec.label === "string" ? rec.label : "LFO",
+    shape: (typeof rec.shape === "string" ? rec.shape : "sine") as any,
+    rate: asNumberOr(rec.rate, 1),
+    depth: clamp01(asNumberOr(rec.depth, 1), 1),
+    phase: clamp01(asNumberOr(rec.phase, 0), 0),
+    bias: clamp01(asNumberOr(rec.bias, 0), 0),
+    bipolar: asBooleanOr(rec.bipolar, true),
+  };
+}
+
+function coerceSequencerConfig(raw: unknown, id: string): any {
+  const rec = (raw && typeof raw === "object" ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  return {
+    id: typeof rec.id === "string" ? rec.id : id,
+    type: "sequencer",
+    enabled: asBooleanOr(rec.enabled, true),
+    label: typeof rec.label === "string" ? rec.label : "SEQ",
+    steps: Array.isArray(rec.steps)
+      ? rec.steps.map((v: any) => clamp01(asNumberOr(v, 0.5), 0.5))
+      : Array(16).fill(0.5),
+    rate: asNumberOr(rec.rate, 0.0625),
+    smooth: asBooleanOr(rec.smooth, false),
+  };
+}
+
+function coerceModulationState(raw: unknown): ModulationEngineState {
+  const defaults = defaultModulationState();
+  const rec = (raw && typeof raw === "object" ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  const sources = asArray(rec.sources).map((s: any, idx) => {
+    if (s?.type === "sequencer") return coerceSequencerConfig(s, `seq-${idx}`);
+    if (s?.type === "euclidean") return { ...s, type: "euclidean" }; // Basic pass-thru for now
+    return coerceLFOConfig(s, `lfo-${idx}`);
+  });
+  const targets = asArray(rec.targets).map((t: any): ModulationTarget => {
+    const tr = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
+    return {
+      sourceId: typeof tr.sourceId === "string" ? tr.sourceId : "",
+      targetControlId:
+        typeof tr.targetControlId === "string" ? tr.targetControlId : "",
+      amount: clamp01(asNumberOr(tr.amount, 1), 1),
+    };
+  });
+  return {
+    sources,
+    targets,
+    scenes: asArray(rec.scenes).map((sc: any) => ({
+      id: String(sc.id),
+      label: String(sc.label),
+      sources: asArray(sc.sources), // Simplified for now
+    })),
+    activeSceneId: asStringOrNull(rec.activeSceneId),
+    targetSceneId: asStringOrNull(rec.targetSceneId),
+    morph: clamp01(asNumberOr(rec.morph, 0), 0),
+  };
+}
+
+function coerceSnapshotChainStep(raw: unknown, idx: number): SnapshotChainStep {
+  const rec = (
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
+  return {
+    id: typeof rec.id === "string" ? rec.id : `step-${idx + 1}`,
+    snapshotId: asStringOrNull(rec.snapshotId),
+    snapshotName:
+      typeof rec.snapshotName === "string" ? rec.snapshotName : "Slot",
+    bars: Math.max(1, Math.round(asNumberOr(rec.bars, 1))),
+  };
+}
+
+function coerceSnapshotChain(raw: unknown, idx: number): SnapshotChain {
+  const rec = (
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
+  const steps = asArray(rec.steps).map((s, sIdx) =>
+    coerceSnapshotChainStep(s, sIdx)
+  );
+  return {
+    id: typeof rec.id === "string" ? rec.id : `chain-${idx + 1}`,
+    name: typeof rec.name === "string" ? rec.name : `Chain ${idx + 1}`,
+    loop: asBooleanOr(rec.loop, true),
+    steps: steps.length > 0 ? steps : [],
+  };
+}
+
+function coerceSnapshotChainState(raw: unknown): SnapshotChainState {
+  const defaults = defaultSnapshotChainState();
+  const rec = (
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
+  const chains = asArray(rec.chains).map((c, idx) =>
+    coerceSnapshotChain(c, idx)
+  );
+  const safeChains = chains.length > 0 ? chains : defaults.chains;
+  const activeChainId =
+    typeof rec.activeChainId === "string" &&
+    safeChains.some((c) => c.id === rec.activeChainId)
+      ? rec.activeChainId
+      : safeChains[0]?.id ?? null;
+
+  return {
+    chains: safeChains,
+    activeChainId,
+    playing: asBooleanOr(rec.playing, false),
+    currentIndex: Math.max(0, Math.round(asNumberOr(rec.currentIndex, 0))),
+  };
+}
+
+function coerceProjectStateV4(rawState: unknown): ProjectStateV4 {
+  const base = coerceProjectStateV3(rawState);
+  const raw = (
+    rawState && typeof rawState === "object"
+      ? (rawState as Record<string, unknown>)
+      : {}
+  ) as Record<string, unknown>;
+  const snapshotChains = coerceSnapshotChainState((raw as any)?.snapshotChains);
+  return {
+    ...base,
+    snapshotChains,
+  };
+}
+
 function coerceProjectStateV2(rawState: unknown): ProjectStateV2 {
   const base = coerceProjectStateV1(rawState);
   const raw = (
@@ -905,7 +1172,21 @@ function coerceProjectStateV2(rawState: unknown): ProjectStateV2 {
   };
 }
 
-export function coerceProjectDoc(raw: unknown): ProjectDocV2 {
+function coerceProjectStateV3(rawState: unknown): ProjectStateV3 {
+  const base = coerceProjectStateV2(rawState);
+  const raw = (
+    rawState && typeof rawState === "object"
+      ? (rawState as Record<string, unknown>)
+      : {}
+  ) as Record<string, unknown>;
+  const modulation = coerceModulationState((raw as any)?.modulation);
+  return {
+    ...base,
+    modulation,
+  };
+}
+
+export function coerceProjectDoc(raw: unknown): ProjectDoc {
   const fallback = defaultProjectDoc();
   if (!raw || typeof raw !== "object") return fallback;
 
@@ -914,18 +1195,39 @@ export function coerceProjectDoc(raw: unknown): ProjectDocV2 {
 
   if (rec.schemaVersion === 1) {
     const v1State = coerceProjectStateV1((rec as any).state);
+    const v2State = upgradeToV2(v1State);
+    const v3State = upgradeToV3(v2State);
     return {
-      schemaVersion: 2,
+      schemaVersion: 4,
       updatedAt,
-      state: upgradeToV2(v1State),
+      state: upgradeToV4(v3State),
     };
   }
 
-  if (rec.schemaVersion !== 2) return fallback;
+  if (rec.schemaVersion === 2) {
+    const v2State = coerceProjectStateV2((rec as any).state);
+    const v3State = upgradeToV3(v2State);
+    return {
+      schemaVersion: 4,
+      updatedAt,
+      state: upgradeToV4(v3State),
+    };
+  }
+
+  if (rec.schemaVersion === 3) {
+    const v3State = coerceProjectStateV3((rec as any).state);
+    return {
+      schemaVersion: 4,
+      updatedAt,
+      state: upgradeToV4(v3State),
+    };
+  }
+
+  if (rec.schemaVersion !== 4) return fallback;
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     updatedAt,
-    state: coerceProjectStateV2((rec as any).state),
+    state: coerceProjectStateV4((rec as any).state),
   };
 }

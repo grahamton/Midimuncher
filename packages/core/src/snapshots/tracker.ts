@@ -1,5 +1,11 @@
 import type { MidiEvent } from "../midi/types";
-import type { SnapshotDeviceBinding, SnapshotDeviceState, SnapshotNoteState, SnapshotState } from "./types";
+import type { ModulationEngineState } from "../modulation/types";
+import type {
+  SnapshotDeviceBinding,
+  SnapshotDeviceState,
+  SnapshotNoteState,
+  SnapshotState,
+} from "./types";
 
 type DeviceRuntimeState = {
   binding: SnapshotDeviceBinding;
@@ -40,7 +46,7 @@ export class SnapshotTracker {
       const state: DeviceRuntimeState = existing ?? {
         binding,
         cc: new Map(),
-        notes: new Map()
+        notes: new Map(),
       };
       state.binding = binding;
       this.devices.set(binding.deviceId, state);
@@ -98,9 +104,14 @@ export class SnapshotTracker {
     }
   }
 
-  capture(meta?: { notes?: string | null; bpm?: number | null }): SnapshotState {
+  capture(meta?: {
+    notes?: string | null;
+    bpm?: number | null;
+    modulation?: ModulationEngineState;
+  }): SnapshotState {
     const devices: SnapshotDeviceState[] = [];
-    const snapshotNotes = typeof meta?.notes === "string" ? meta?.notes : this.notesMeta;
+    const snapshotNotes =
+      typeof meta?.notes === "string" ? meta?.notes : this.notesMeta;
 
     for (const state of this.devices.values()) {
       const cc: Record<number, number> = {};
@@ -118,7 +129,7 @@ export class SnapshotTracker {
         cc,
         program: state.program,
         notes,
-        name: state.binding.name ?? undefined
+        name: state.binding.name ?? undefined,
       });
     }
 
@@ -126,7 +137,8 @@ export class SnapshotTracker {
       capturedAt: Date.now(),
       bpm: typeof meta?.bpm === "number" ? meta?.bpm : this.bpm,
       notes: snapshotNotes ?? null,
-      devices
+      devices,
+      modulation: meta?.modulation,
     };
   }
 
@@ -134,7 +146,10 @@ export class SnapshotTracker {
     return this.capture();
   }
 
-  private ensureDevice(id: string, binding: SnapshotDeviceBinding): DeviceRuntimeState {
+  private ensureDevice(
+    id: string,
+    binding: SnapshotDeviceBinding
+  ): DeviceRuntimeState {
     let device = this.devices.get(id);
     if (!device) {
       device = { binding, cc: new Map(), notes: new Map() };
@@ -164,7 +179,9 @@ export class SnapshotTracker {
         if (this.clockIntervals.length > 12) {
           this.clockIntervals.shift();
         }
-        const avg = this.clockIntervals.reduce((acc, n) => acc + n, 0) / this.clockIntervals.length;
+        const avg =
+          this.clockIntervals.reduce((acc, n) => acc + n, 0) /
+          this.clockIntervals.length;
         const bpm = 60000 / (avg * CLOCKS_PER_QUARTER);
         this.bpm = Math.round(bpm);
       }

@@ -5,7 +5,11 @@ import { coerceProjectDoc, defaultProjectDoc } from "../shared/projectTypes";
 
 describe("coerceProjectDoc", () => {
   it("applies snapshots defaults when missing", () => {
-    const result = coerceProjectDoc({ schemaVersion: 2, updatedAt: 123, state: {} });
+    const result = coerceProjectDoc({
+      schemaVersion: 2,
+      updatedAt: 123,
+      state: {},
+    });
     assert.equal(result.state.snapshots.burst.intervalMs, 6);
     assert.equal(result.state.snapshots.burst.maxPerInterval, 1);
     assert.equal(result.state.snapshots.banks.length, 20);
@@ -31,7 +35,15 @@ describe("coerceProjectDoc", () => {
         activeView: "unknown",
         selectedDeviceId: 42,
         devices: [
-          { id: null, name: 12, instrumentId: 9, inputId: 5, outputId: {}, channel: 99, clockEnabled: "yes" }
+          {
+            id: null,
+            name: 12,
+            instrumentId: 9,
+            inputId: 5,
+            outputId: {},
+            channel: 99,
+            clockEnabled: "yes",
+          },
         ],
         tempoBpm: "fast",
         useClockSync: "yes",
@@ -44,10 +56,16 @@ describe("coerceProjectDoc", () => {
         controls: [{ id: "c1" }],
         selectedControlId: undefined,
         ui: {
-          routeBuilder: { forceChannelEnabled: "no", routeChannel: -3, allowNotes: 1, allowClock: "yes", clockDiv: 300 },
-          diagnostics: { note: -10, ccValue: 999 }
-        }
-      }
+          routeBuilder: {
+            forceChannelEnabled: "no",
+            routeChannel: -3,
+            allowNotes: 1,
+            allowClock: "yes",
+            clockDiv: 300,
+          },
+          diagnostics: { note: -10, ccValue: 999 },
+        },
+      },
     });
 
     assert.equal(dirty.state.activeView, defaultProjectDoc().state.activeView);
@@ -59,22 +77,57 @@ describe("coerceProjectDoc", () => {
       inputId: null,
       outputId: null,
       channel: 16,
-      clockEnabled: false
+      clockEnabled: false,
     });
     assert.equal(dirty.state.ui.routeBuilder.routeChannel, 1);
     assert.equal(dirty.state.ui.routeBuilder.clockDiv, 96);
-    assert.deepStrictEqual(dirty.state.ui.diagnostics, { note: 0, ccValue: 127 });
+    assert.deepStrictEqual(dirty.state.ui.diagnostics, {
+      note: 0,
+      ccValue: 127,
+    });
     assert.equal(dirty.state.tempoBpm, defaultProjectDoc().state.tempoBpm);
-    assert.equal(dirty.state.snapshotQuantize, defaultProjectDoc().state.snapshotQuantize);
-    assert.equal(dirty.state.snapshotMode, defaultProjectDoc().state.snapshotMode);
-    assert.equal(dirty.state.useClockSync, defaultProjectDoc().state.useClockSync);
-    assert.equal(dirty.state.followClockStart, defaultProjectDoc().state.followClockStart);
-    assert.equal(dirty.state.snapshotFadeMs, defaultProjectDoc().state.snapshotFadeMs);
-    assert.equal(dirty.state.snapshotClockSource, defaultProjectDoc().state.snapshotClockSource);
-    assert.equal(dirty.state.snapshotCycleBars, defaultProjectDoc().state.snapshotCycleBars);
-    assert.equal(dirty.state.stageDropControlId, defaultProjectDoc().state.stageDropControlId);
-    assert.equal(dirty.state.stageDropToValue, defaultProjectDoc().state.stageDropToValue);
-    assert.equal(dirty.state.stageDropDurationMs, defaultProjectDoc().state.stageDropDurationMs);
-    assert.equal(dirty.state.chainSteps.length, defaultProjectDoc().state.chainSteps.length);
+    assert.equal(
+      dirty.state.snapshotQuantize,
+      defaultProjectDoc().state.snapshotQuantize
+    );
+    assert.equal(
+      dirty.state.snapshotMode,
+      defaultProjectDoc().state.snapshotMode
+    );
+    assert.equal(
+      dirty.state.useClockSync,
+      defaultProjectDoc().state.useClockSync
+    );
+    assert.equal(
+      dirty.state.followClockStart,
+      defaultProjectDoc().state.followClockStart
+    );
+    assert.equal(
+      dirty.state.snapshotFadeMs,
+      defaultProjectDoc().state.snapshotFadeMs
+    );
+    assert.equal(
+      dirty.state.snapshotClockSource,
+      defaultProjectDoc().state.snapshotClockSource
+    );
+    assert.equal(
+      dirty.state.snapshotCycleBars,
+      defaultProjectDoc().state.snapshotCycleBars
+    );
+    assert.equal(
+      dirty.state.stageDropControlId,
+      defaultProjectDoc().state.stageDropControlId
+    );
+    assert.equal(
+      dirty.state.stageDropToValue,
+      defaultProjectDoc().state.stageDropToValue
+    );
+    assert.equal(
+      dirty.state.stageDropDurationMs,
+      defaultProjectDoc().state.stageDropDurationMs
+    );
+    assert.ok(dirty.state.snapshotChains);
+    assert.equal(dirty.state.snapshotChains.chains[0].id, "chain-legacy");
+    assert.equal(dirty.state.snapshotChains.chains[0].steps.length, 1);
   });
 });

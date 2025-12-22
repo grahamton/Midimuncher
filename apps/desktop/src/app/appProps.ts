@@ -15,6 +15,7 @@ import type {
   SnapshotMode,
   SnapshotQuantize,
   SnapshotsState,
+  SnapshotChainState,
 } from "../../shared/projectTypes";
 import type {
   ControlElement,
@@ -98,13 +99,15 @@ export type AppRouterProps = {
   onChangeSnapshotClockSource: (s: SnapshotClockSource) => void;
   snapshotCycleBars: number;
   onChangeSnapshotCycleBars: (bars: number) => void;
-  chainSteps: ChainStep[];
-  chainPlaying: boolean;
-  chainIndex: number;
+  snapshotChains: SnapshotChainState;
+  setSnapshotChains: (state: SnapshotChainState) => void;
   onStartChain: () => void;
   onStopChain: () => void;
-  onAddChainStep: () => void;
-  onRemoveChainStep: (index: number) => void;
-  onMoveChainStep: (from: number, to: number) => void;
-  onUpdateChainBars: (index: number, bars: number) => void;
+  onOxiTransport: (cmd: "start" | "stop" | "record") => void;
+  onQuickOxiSetup: () => void;
+  onAddDevice: () => void;
+  modulationState: import("@midi-playground/core").ModulationEngineState;
+  setModulationState: (
+    next: import("@midi-playground/core").ModulationEngineState
+  ) => void;
 };
