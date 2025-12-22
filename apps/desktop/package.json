@@ -14,6 +14,7 @@
     "dev:main": "tsup electron/main.ts electron/preload.ts electron/midiBridge.ts electron/sequencerHost.ts --format cjs --sourcemap --out-dir dist-electron --watch",
     "dev:electron": "wait-on tcp:5173 dist-electron/main.js && node scripts/run-electron.js",
     "build": "npm run build:main && npm run build:renderer",
+    "package:beta": "node scripts/package-release.cjs",
     "build:main": "tsup electron/main.ts electron/preload.ts electron/midiBridge.ts electron/sequencerHost.ts --format cjs --sourcemap --out-dir dist-electron",
     "build:renderer": "vite build",
     "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json",

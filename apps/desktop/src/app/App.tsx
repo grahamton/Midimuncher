@@ -573,6 +573,7 @@ export function App() {
 
   const selectedControl = controls.find((c) => c.id === selectedControlId);
   const backendLabel = backends.find((b) => b.selected)?.label ?? "No backend";
+  const selectedBackendId = backends.find((b) => b.selected)?.id ?? "";
   const formatPortLabel = (name: string) =>
     name.length > 20 ? name.substring(0, 20) + "..." : name;
   const inputLabel = selectedIn
@@ -592,45 +593,102 @@ export function App() {
       <AppChrome>
         <TopStatusBar
           actions={
-            <div style={{ ...styles.row, gap: 4 }}>
-              <button
-                style={styles.btnTiny}
-                onClick={() => onOxiTransport("stop")}
-                title="OXI Stop"
-              >
-                <div style={{ width: 8, height: 8, background: "#ef4444" }} />
-              </button>
-              <button
-                style={{ ...styles.btnTiny, background: "#10b981" }}
-                onClick={() => onOxiTransport("start")}
-                title="OXI Play"
-              >
-                <Play size={10} fill="white" />
-              </button>
-              <button
-                style={{ ...styles.btnTiny, borderRadius: "50%" }}
-                onClick={() => onOxiTransport("record")}
-                title="OXI Record"
-              >
-                <div
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                justifyContent: "center",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={styles.selectorGroup}>
+                  <label style={styles.selectorLabel}>Backend</label>
+                  <select
+                    style={styles.selector}
+                    value={selectedBackendId}
+                    onChange={(e) => selectBackend(e.target.value)}
+                  >
+                    {backends.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.selectorGroup}>
+                  <label style={styles.selectorLabel}>Input</label>
+                  <select
+                    style={styles.selector}
+                    value={selectedIn ?? ""}
+                    onChange={(e) => setSelectedIn(e.target.value || null)}
+                  >
+                    <option value="">None</option>
+                    {ports.inputs.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {formatPortLabel(p.name)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.selectorGroup}>
+                  <label style={styles.selectorLabel}>Output</label>
+                  <select
+                    style={styles.selector}
+                    value={selectedOut ?? ""}
+                    onChange={(e) => setSelectedOut(e.target.value || null)}
+                  >
+                    <option value="">None</option>
+                    {ports.outputs.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {formatPortLabel(p.name)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ ...styles.row, gap: 4 }}>
+                <button
+                  style={styles.btnTiny}
+                  onClick={() => onOxiTransport("stop")}
+                  title="OXI Stop"
+                >
+                  <div style={{ width: 8, height: 8, background: "#ef4444" }} />
+                </button>
+                <button
+                  style={{ ...styles.btnTiny, background: "#10b981" }}
+                  onClick={() => onOxiTransport("start")}
+                  title="OXI Play"
+                >
+                  <Play size={10} fill="white" />
+                </button>
+                <button
+                  style={{ ...styles.btnTiny, borderRadius: "50%" }}
+                  onClick={() => onOxiTransport("record")}
+                  title="OXI Record"
+                >
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#ef4444",
+                    }}
+                  />
+                </button>
+                <span
                   style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "#ef4444",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    color: "#64748b",
+                    marginLeft: 4,
                   }}
-                />
-              </button>
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 800,
-                  color: "#64748b",
-                  marginLeft: 4,
-                }}
-              >
-                OXI REMOTE
-              </span>
+                >
+                  OXI REMOTE
+                </span>
+              </div>
             </div>
           }
           saveLabel={

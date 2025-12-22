@@ -305,6 +305,25 @@ export const styles = {
     fontSize: "13px",
     fontWeight: "500",
   },
+  selectorGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  selectorLabel: {
+    fontSize: "11px",
+    color: "#94a3b8",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  },
+  selector: {
+    backgroundColor: "#0f172a",
+    color: "#e2e8f0",
+    border: `1px solid ${palette.tiBorder}`,
+    borderRadius: "6px",
+    padding: "6px 8px",
+    minWidth: "160px",
+  },
   kpi: {
     fontSize: "18px",
     fontWeight: "bold",
