@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "id": "oxi_one",
+    "vendor": "OXI Instruments",
+    "model": "One",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 1
+  },
+  "parameters": [
+    {
+      "id": "transport_stop",
+      "label": "Transport Stop",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 105
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "transport_play",
+      "label": "Transport Play",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 106
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "transport_record_toggle",
+      "label": "Transport Record (toggle)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 107
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "meta": {
+    "id": "volca_keys",
+    "vendor": "Generic",
+    "model": "volca keys",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 1
+  },
+  "parameters": [
+    {
+      "id": "modulation_mod_wheel",
+      "label": "Modulation (mod wheel)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 1
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "expression",
+      "label": "Expression",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 11
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco_1_pitch",
+      "label": "VCO 1 Pitch",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 40
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco_2_pitch",
+      "label": "VCO 2 Pitch",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 41
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco_3_pitch",
+      "label": "VCO 3 Pitch",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 42
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco_eg_intensity",
+      "label": "VCO EG Intensity",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 43
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vcf_cutoff",
+      "label": "VCF Cutoff",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 44
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vcf_resonance",
+      "label": "VCF Resonance",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 45
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vcf_eg_intensity",
+      "label": "VCF EG Intensity",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 46
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vcf_lfo_intensity",
+      "label": "VCF LFO Intensity",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 47
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vcf_lfo_rate",
+      "label": "VCF LFO Rate",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 48
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "eg_attack",
+      "label": "EG Attack",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 49
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "eg_decay_release",
+      "label": "EG Decay/Release",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 50
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "eg_sustain",
+      "label": "EG Sustain",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 51
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "delay_time",
+      "label": "Delay Time",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 52
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "delay_feedback",
+      "label": "Delay Feedback",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 53
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

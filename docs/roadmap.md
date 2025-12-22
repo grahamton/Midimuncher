@@ -71,20 +71,36 @@ Status vs goals: Phase 0–7 shipped; Phase 8 (Grid/DAW) and further refinement 
 
   - Grid view for notes/clip launch; Ableton/Bitwig templates after core perf features are solid.
 
-- **Phase 9 - Instrument Library & Ecosystem (Planned)**
+- **Phase 9 - Instrument Library & Ecosystem (Done)**
 
-  - **Instrument Definition Schema**: Define a robust JSON format (`.mididef.json`) for hardware profiles (CCs, NRPNs, Ranges), moving away from hardcoded TypeScript.
+  - **Instrument Definition Schema**: Define a robust JSON format (`.mididef.json`) for hardware profiles (CCs, NRPNs, Ranges).
   - **Local Library**: App scans `%USERPROFILE%/.midimuncher/instruments` for user-defined profiles.
-  - **Community Sync**: Integration with external repositories (e.g., `pencilresearch/midi` or "midd.cc" concept) to fetch/import definitions.
-    - Adapter to convert CSV/YAML from community sources into app-native JSON.
-  - **Smart Mapping**: Auto-map controls based on profile tags (e.g., "Cutoff" -> Macro 1) and visualization of parameter ranges.
+  - **Community Sync**: Scripts to ingest external repositories and heuristic tagging logic.
+  - **Smart Mapping**: Auto-map controls based on profile tags (e.g., "Cutoff" -> Macro 1).
 
-- **Phase 10 - Performance & Expression ("The Instrument Layer") (Planned)**
-  - **Live Surface**: Touch-friendly XY Pads, Physics-based faders (friction/inertia), and "Performance Buttons" (Hold/Toggle/Momentary).
-  - **Gesture Looper**: Record knob movements and loop them as automation curves in real-time.
-  - **Generative Inserts**: Midi FX slots per route (Arpeggiator, Chorder, Scale Quantizer, Euclidean Gate) to transform simple inputs into complex musical phrases.
-  - **Visualizers**: Reactive audio/midi visualizations (Spectrum, Oscilloscope) to give the app a "pulse".
-  - **Global Macros**: A dedicated "Master Control" view with 8-12 vital parameters gathered from across the rig (e.g., "All Filters Cutoff").
+- **Phase 10 - The "Ghost" Buster (Bi-Directional Sync) (Planned)**
+
+  - **The Problem**: Software faders "lie" when hardware knobs move.
+  - **Parameter Fetching**: On snapshot load, ask hardware for current values (CC Request/Dump) to sync UI.
+  - **"Soft Takeover" UI (Ghost Faders)**: Shadow faders that show the software value vs hardware value; hardware must cross software value to "latch" and take control.
+
+- **Phase 11 - Visual Signal Flow ("The Pulse") (Planned)**
+
+  - **The Problem**: Invisible MIDI routing makes debugging hard.
+  - **Active Cable Animations**: Virtual cables pulse/glow when data flows (e.g. LFO -> Filter).
+  - **Mini-Oscilloscopes**: High-contrast scrolling graphs next to macros to visualize automation shapes.
+
+- **Phase 12 - "Stage Mode" (High-Contrast UI) (Planned)**
+
+  - **The Problem**: Studio UI is too complex/small for dark stages.
+  - **The "Big Board" View**: Hide all setup/wiring. Show ONLY 8 Global Macros + 16 Snapshot Pads.
+  - **Safe Zones & Touch Opt**: Huge buttons, long-press for critical actions (Stop), High-Vis Neon color scheme.
+
+- **Phase 13 - Setlist Manager (Planned)**
+  - **The Problem**: Need specific subsets of snapshots for gigs, not entire studio projects.
+  - **Song Containers**: Group Snapshots into "Songs".
+  - **The Setlist**: Drag-and-drop ordering of Songs.
+  - **OXI Sync**: Changing OXI Pattern auto-loads the corresponding "Song".
 
 ## Engineering backlog
 

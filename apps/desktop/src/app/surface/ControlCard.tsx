@@ -4,10 +4,17 @@ import { Crossfader, Fader, Knob, PadButton } from "@midi-playground/ui";
 export type ControlCardProps = {
   control: ControlElement;
   onUpdate: (value01: number) => void;
+  hardwareState?: { value: number; latched: boolean };
 };
 
-export function ControlCard({ control, onUpdate }: ControlCardProps) {
+export function ControlCard({
+  control,
+  onUpdate,
+  hardwareState,
+}: ControlCardProps) {
   const value01 = control.value / 127;
+  const ghost01 = hardwareState ? hardwareState.value / 127 : undefined;
+
   return (
     <div
       style={{
@@ -18,20 +25,44 @@ export function ControlCard({ control, onUpdate }: ControlCardProps) {
         display: "flex",
         flexDirection: "column",
         gap: 10,
-        boxShadow: "0 4px 16px rgba(0,0,0,0.25)"
+        boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{control.label}</div>
-        <span style={{ color: "#94a3b8", fontSize: 12 }}>{control.type.toUpperCase()}</span>
+        <span style={{ color: "#94a3b8", fontSize: 12 }}>
+          {control.type.toUpperCase()}
+        </span>
       </div>
       <div style={{ display: "flex", justifyContent: "center" }}>
         {control.type === "fader" ? (
-          <Fader value={value01} onChange={onUpdate} label="" color="#38bdf8" />
+          <Fader
+            value={value01}
+            onChange={onUpdate}
+            label=""
+            color="#38bdf8"
+            ghostValue={ghost01}
+          />
         ) : control.type === "knob" ? (
-          <Knob value={value01} onChange={onUpdate} label="" color="#f472b6" />
+          <Knob
+            value={value01}
+            onChange={onUpdate}
+            label=""
+            color="#f472b6"
+            ghostValue={ghost01}
+          />
         ) : (
-          <PadButton label="Toggle" active={control.value > 0} onToggle={() => onUpdate(control.value > 0 ? 0 : 1)} />
+          <PadButton
+            label="Toggle"
+            active={control.value > 0}
+            onToggle={() => onUpdate(control.value > 0 ? 0 : 1)}
+          />
         )}
       </div>
       <BindingList control={control} />
@@ -50,14 +81,16 @@ function BindingList({ control }: { control: ControlElement }) {
         const targetLabel = slot.broadcast
           ? "Broadcast"
           : slot.targets?.length
-            ? slot.targets.map((t) => t.deviceId).join(", ")
-            : slot.targetDeviceId ?? "no target";
+          ? slot.targets.map((t) => t.deviceId).join(", ")
+          : slot.targetDeviceId ?? "no target";
         if (slot.kind === "cc") {
           return (
             <BindingRow
               key={idx}
               label={`CC ${slot.cc}`}
-              detail={`ch ${slot.channel ?? "dev"} / ${slot.min}-${slot.max} / ${slot.curve}`}
+              detail={`ch ${slot.channel ?? "dev"} / ${slot.min}-${
+                slot.max
+              } / ${slot.curve}`}
               target={targetLabel}
             />
           );
@@ -67,7 +100,9 @@ function BindingList({ control }: { control: ControlElement }) {
             <BindingRow
               key={idx}
               label="Program"
-              detail={`ch ${slot.channel ?? "dev"} / ${slot.min}-${slot.max} / ${slot.curve}`}
+              detail={`ch ${slot.channel ?? "dev"} / ${slot.min}-${
+                slot.max
+              } / ${slot.curve}`}
               target={targetLabel}
             />
           );
@@ -88,7 +123,15 @@ function BindingList({ control }: { control: ControlElement }) {
   );
 }
 
-function BindingRow({ label, detail, target }: { label: string; detail: string; target: string | null }) {
+function BindingRow({
+  label,
+  detail,
+  target,
+}: {
+  label: string;
+  detail: string;
+  target: string | null;
+}) {
   return (
     <div
       style={{
@@ -99,11 +142,13 @@ function BindingRow({ label, detail, target }: { label: string; detail: string; 
         background: "#0f172a",
         border: "1px solid #1f2937",
         color: "#e2e8f0",
-        fontSize: 12
+        fontSize: 12,
       }}
     >
       <span>{label}</span>
-      <span style={{ color: "#94a3b8" }}>{detail} · {target ?? "no target"}</span>
+      <span style={{ color: "#94a3b8" }}>
+        {detail} · {target ?? "no target"}
+      </span>
     </div>
   );
 }

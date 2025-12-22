@@ -1,12 +1,10 @@
 import { useState, useMemo } from "react";
-import {
-  getInstrumentProfile,
-  type InstrumentProfile,
-} from "@midi-playground/core";
+import type { InstrumentProfile, InstrumentDef } from "@midi-playground/core";
 import { styles } from "../styles";
 import type { DeviceConfig } from "../../../shared/projectTypes";
 
 export type AssignmentWizardProps = {
+  instrumentLibrary: InstrumentDef[];
   selectedControlId: string | null;
   selectedControlLabel?: string;
   devices: DeviceConfig[];
@@ -20,6 +18,7 @@ export type AssignmentWizardProps = {
 };
 
 export function AssignmentWizard({
+  instrumentLibrary,
   selectedControlId,
   selectedControlLabel,
   devices,
@@ -33,8 +32,25 @@ export function AssignmentWizard({
 
   // Resolve target device
   const device = devices.find((d) => d.id === targetDeviceId) ?? devices[0];
-  const profile: InstrumentProfile | null = device
-    ? getInstrumentProfile(device.instrumentId)
+
+  // Lookup and Adapt
+  const def = device?.instrumentId
+    ? (instrumentLibrary || []).find((p) => p.meta.id === device.instrumentId)
+    : null;
+
+  const profile: InstrumentProfile | null = def
+    ? {
+        id: def.meta.id || "",
+        name: `${def.meta.vendor} ${def.meta.model}`,
+        defaultChannel: def.connection?.defaultChannel ?? 1,
+        cc: (def.parameters || [])
+          .filter((p) => p.msg.type === "cc")
+          .map((p) => ({
+            id: p.id,
+            label: p.label,
+            cc: p.msg.index,
+          })),
+      }
     : null;
 
   // Filter CCs

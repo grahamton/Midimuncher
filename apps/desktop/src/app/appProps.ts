@@ -21,6 +21,7 @@ import type {
   ControlElement,
   MappingSlot,
   MidiEvent,
+  InstrumentDef,
 } from "@midi-playground/core";
 import type { BridgeClock } from "../services/midiBridge";
 
@@ -113,4 +114,7 @@ export type AppRouterProps = {
   setModulationState: (
     next: import("@midi-playground/core").ModulationEngineState
   ) => void;
+  instrumentLibrary: InstrumentDef[];
+  hardwareState: Record<string, { value: number; latched: boolean }>;
+  onNavigate: (view: AppView) => void;
 };

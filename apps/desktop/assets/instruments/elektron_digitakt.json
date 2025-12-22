@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "id": "digitakt",
+    "vendor": "Elektron",
+    "model": "Digitakt",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 10
+  },
+  "parameters": [
+    {
+      "id": "sample_select",
+      "label": "Sample Select",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 19
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "bit_reduction",
+      "label": "Bit Reduction",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 18
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_freq",
+      "label": "Filter Frequency",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 74
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "delay_send",
+      "label": "Delay Send",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 82
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "reverb_send",
+      "label": "Reverb Send",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 83
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "tune",
+      "label": "Tune (Pitch)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 16
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "track_level",
+      "label": "Track Level",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 95
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

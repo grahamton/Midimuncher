@@ -174,6 +174,8 @@ export function App() {
     setSessionStatus,
     modulationState,
     setModulationState,
+    instrumentLibrary,
+    hardwareState,
   } = useAppController();
 
   // -- Learn Logic --
@@ -752,53 +754,87 @@ export function App() {
           inputLabel={inputLabel}
           outputLabel={outputLabel}
         />
-        <BodySplitPane>
-          <LeftNavRail
-            route={activeView}
-            onChangeRoute={(next: AppView) => setActiveView(next)}
-            onPanic={async () => {
-              if (!midiApi) return;
-              ports.outputs.forEach((p) => {
-                midiApi.send({
-                  portId: p.id,
-                  msg: { t: "cc", ch: 1, cc: 123, val: 0 },
-                });
-                midiApi.send({
-                  portId: p.id,
-                  msg: { t: "cc", ch: 1, cc: 120, val: 0 },
-                });
-              });
+
+        {activeView !== "stage" && (
+          <TopStatusBar
+            loadingPorts={loadingPorts}
+            tempo={(useClockSync && clockBpm) || tempoBpm || 120}
+            onTempoChange={(bpm: number) => {
+              setTempoBpm(bpm);
+              if (useClockSync) setUseClockSync(false);
             }}
-            items={[
-              {
-                id: "setup",
-                label: "Setup",
-                icon: <AudioWaveform size={20} />,
-              },
-              { id: "routes", label: "Routes", icon: <Cable size={20} /> },
-              { id: "mapping", label: "Mapping", icon: <Sliders size={20} /> },
-              {
-                id: "modulation",
-                label: "Modulation",
-                icon: <Activity size={20} />,
-              },
-              { id: "stage", label: "Stage", icon: <Play size={20} /> },
-              { id: "chains", label: "Chains", icon: <Link size={20} /> },
-              {
-                id: "snapshots",
-                label: "Snapshots",
-                icon: <Camera size={20} />,
-              },
-              { id: "monitor", label: "Monitor", icon: <Activity size={20} /> },
-              {
-                id: "settings",
-                label: "Settings",
-                icon: <Settings size={20} />,
-              },
-            ]}
+            clockBpm={clockBpm}
+            useClockSync={useClockSync}
+            clockStale={clockStale}
+            onRelinkClock={relinkClock}
+            onToggleClockSync={setUseClockSync}
+            followClockStart={followClockStart}
+            onToggleFollowClockStart={setFollowClockStart}
+            backendLabel={backendLabel}
+            inputLabel={inputLabel}
+            outputLabel={outputLabel}
           />
+        )}
+
+        <BodySplitPane>
+          {activeView !== "stage" && (
+            <LeftNavRail
+              route={activeView}
+              onChangeRoute={(next: AppView) => setActiveView(next)}
+              onPanic={async () => {
+                if (!midiApi) return;
+                ports.outputs.forEach((p) => {
+                  midiApi.send({
+                    portId: p.id,
+                    msg: { t: "cc", ch: 1, cc: 123, val: 0 },
+                  });
+                  midiApi.send({
+                    portId: p.id,
+                    msg: { t: "cc", ch: 1, cc: 120, val: 0 },
+                  });
+                });
+              }}
+              items={[
+                {
+                  id: "setup",
+                  label: "Setup",
+                  icon: <AudioWaveform size={20} />,
+                },
+                { id: "routes", label: "Routes", icon: <Cable size={20} /> },
+                {
+                  id: "mapping",
+                  label: "Mapping",
+                  icon: <Sliders size={20} />,
+                },
+                {
+                  id: "modulation",
+                  label: "Modulation",
+                  icon: <Activity size={20} />,
+                },
+                { id: "stage", label: "Stage", icon: <Play size={20} /> },
+                { id: "chains", label: "Chains", icon: <Link size={20} /> },
+                {
+                  id: "snapshots",
+                  label: "Snapshots",
+                  icon: <Camera size={20} />,
+                },
+                {
+                  id: "monitor",
+                  label: "Monitor",
+                  icon: <Activity size={20} />,
+                },
+                {
+                  id: "settings",
+                  label: "Settings",
+                  icon: <Settings size={20} />,
+                },
+              ]}
+            />
+          )}
           <MainContentArea>
             <AppRouter
+              onNavigate={setActiveView}
+              instrumentLibrary={instrumentLibrary}
               route={activeView}
               ports={ports}
               clock={clock}
@@ -848,6 +884,7 @@ export function App() {
               onOxiTransport={onOxiTransport}
               transportChannel={transportChannel}
               setTransportChannel={setTransportChannel}
+              hardwareState={hardwareState}
               onQuickCc={(
                 portId: string,
                 ch: number,

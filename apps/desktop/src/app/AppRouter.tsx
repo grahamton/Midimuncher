@@ -41,13 +41,16 @@ export function AppRouter(props: AppRouterProps) {
     case "routes":
       return <RoutesPage routes={props.routes} setRoutes={props.setRoutes} />;
     case "mapping":
-      return <MappingPage {...props} />;
+      return (
+        <MappingPage {...props} instrumentLibrary={props.instrumentLibrary} />
+      );
     case "surfaces":
       return (
         <SurfaceBoardPage
           controls={props.controls}
           onUpdateControl={props.updateControl}
           onEmitControl={props.onEmitControl}
+          hardwareState={props.hardwareState}
         />
       );
     case "stage": {
@@ -79,16 +82,12 @@ export function AppRouter(props: AppRouterProps) {
               props.onDropSnapshot(id);
             }
           }}
-          onSendCc={props.onStageSendCc}
-          dropMacroControls={dropMacroControls}
-          dropMacroControlId={props.stageDropControlId}
-          onChangeDropMacroControlId={props.onChangeStageDropControlId}
-          dropMacroToValue={props.stageDropToValue}
-          onChangeDropMacroToValue={props.onChangeStageDropToValue}
-          dropDurationMs={props.stageDropDurationMs}
-          onChangeDropDurationMs={props.onChangeStageDropDurationMs}
           devices={props.devices}
           clock={props.clock}
+          controls={props.controls}
+          onUpdateControl={props.updateControl}
+          onEmitControl={props.onEmitControl}
+          onExit={() => props.onNavigate("setup")}
         />
       );
     }

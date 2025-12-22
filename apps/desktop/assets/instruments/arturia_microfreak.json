@@ -1,0 +1,94 @@
+{
+  "meta": {
+    "id": "microfreak",
+    "vendor": "Arturia",
+    "model": "MicroFreak",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 1
+  },
+  "parameters": [
+    {
+      "id": "osc_type",
+      "label": "Oscillator Type",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 9
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "osc_wave",
+      "label": "Oscillator Wave",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 10
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "osc_timbre",
+      "label": "Oscillator Timbre",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 12
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "osc_shape",
+      "label": "Oscillator Shape",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 13
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "spice",
+      "label": "Spice",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 2
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_cutoff",
+      "label": "Filter Cutoff",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 23
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

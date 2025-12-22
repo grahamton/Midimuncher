@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "id": "liven_ambient0",
+    "vendor": "Sonicware",
+    "model": "Liven Ambient Ø",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 4
+  },
+  "parameters": [
+    {
+      "id": "layer_blend",
+      "label": "Layer Blend",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 12
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "tape_wow_flutter",
+      "label": "Tape FX (Wow/Flutter)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 21
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "reverb_mix",
+      "label": "Reverb Mix",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 25
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_cutoff",
+      "label": "Filter Cutoff",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 74
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "random_dice",
+      "label": "Random (Dice)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 102
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

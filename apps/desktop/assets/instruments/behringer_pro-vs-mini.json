@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "id": "pro_vs_mini",
+    "vendor": "Behringer",
+    "model": "PRO VS MINI",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 3
+  },
+  "parameters": [
+    {
+      "id": "mod",
+      "label": "Modulation / Vector Mix",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 1
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_env_decay",
+      "label": "Filter Env Decay",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 13
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_env_sustain",
+      "label": "Filter Env Sustain",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 14
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_cutoff",
+      "label": "Filter Cutoff",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 74
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "wave_a",
+      "label": "Wave Select A",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 24
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "wave_b",
+      "label": "Wave Select B",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 25
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "wave_c",
+      "label": "Wave Select C",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 26
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "wave_d",
+      "label": "Wave Select D",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 27
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "chorus_depth",
+      "label": "Chorus Depth",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 91
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

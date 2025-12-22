@@ -4,6 +4,7 @@ import type {
   SnapshotBurstLimit,
   SnapshotRecallStrategy,
   SnapshotState,
+  InstrumentDef,
 } from "@midi-playground/core";
 
 export type MidiPortInfo = {

@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "id": "keystep",
+    "vendor": "Generic",
+    "model": "KeyStep",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 1
+  },
+  "parameters": [
+    {
+      "id": "mod_strip_default_mod_wheel",
+      "label": "Mod strip (default Mod Wheel)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 1
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "sustain_pedal_default_hold_1",
+      "label": "Sustain pedal (default Hold 1)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 64
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

@@ -23,6 +23,7 @@ import { ProjectStore } from "./projectStore";
 import { SessionLogger } from "./sessionLogger";
 import { SnapshotService } from "./snapshotService";
 import { SequencerHost } from "./sequencerHost";
+import { loadInstrumentLibrary } from "./instrumentService";
 
 const midiBridge = new MidiBridge();
 let sessionLogger: SessionLogger | null = null;
@@ -250,6 +251,11 @@ app.whenReady().then(() => {
       return sequencerHost.apply(payload);
     }
   );
+
+  ipcMain.handle("instruments:load", async () => {
+    sessionLogger?.log("ipc", { name: "instruments:load" });
+    return loadInstrumentLibrary();
+  });
 
   midiBridge.on("midi", (evt: MidiEvent) => {
     sessionLogger?.logMidi(evt);

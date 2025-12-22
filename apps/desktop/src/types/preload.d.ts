@@ -1,4 +1,8 @@
-import type { MidiEvent, SnapshotState } from "@midi-playground/core";
+import type {
+  MidiEvent,
+  SnapshotState,
+  InstrumentDef,
+} from "@midi-playground/core";
 import type {
   MappingEmitPayload,
   MidiBackendInfo,
@@ -10,9 +14,13 @@ import type {
   SnapshotCapturePayload,
   SnapshotQueueStatus,
   SnapshotRecallPayload,
-  SnapshotSchedulePayload
+  SnapshotSchedulePayload,
 } from "../../shared/ipcTypes";
-import type { ProjectDoc, ProjectState, SequencerApplyPayload } from "../../shared/projectTypes";
+import type {
+  ProjectDoc,
+  ProjectState,
+  SequencerApplyPayload,
+} from "../../shared/projectTypes";
 
 export type MidiApi = {
   listPorts: () => Promise<MidiPorts>;
@@ -36,8 +44,11 @@ export type MidiApi = {
   sessionStop: () => Promise<SessionLogStatus>;
   sessionReveal: () => Promise<string | null>;
   applySequencer: (payload: SequencerApplyPayload) => Promise<boolean>;
+  loadInstruments: () => Promise<InstrumentDef[]>;
   onEvent: (listener: (evt: MidiEvent) => void) => () => void;
-  onSnapshotStatus: (listener: (status: SnapshotQueueStatus) => void) => () => void;
+  onSnapshotStatus: (
+    listener: (status: SnapshotQueueStatus) => void
+  ) => () => void;
 };
 
 declare global {

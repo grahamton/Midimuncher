@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "id": "monologue",
+    "vendor": "Korg",
+    "model": "Monologue",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 2
+  },
+  "parameters": [
+    {
+      "id": "filter_cutoff",
+      "label": "Filter Cutoff",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 43
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "resonance",
+      "label": "Resonance",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 44
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco2_pitch",
+      "label": "VCO2 Pitch",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 35
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco1_level",
+      "label": "VCO1 Level",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 39
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "vco2_level",
+      "label": "VCO2 Level",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 40
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "eg_attack",
+      "label": "EG Attack",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 16
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "eg_decay",
+      "label": "EG Decay",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 17
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

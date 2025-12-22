@@ -1,0 +1,601 @@
+{
+  "meta": {
+    "id": "liven_ambient",
+    "vendor": "Generic",
+    "model": "LIVEN Ambient Ã˜",
+    "version": "1.0",
+    "tags": [
+      "legacy-migration"
+    ]
+  },
+  "connection": {
+    "defaultChannel": 1
+  },
+  "parameters": [
+    {
+      "id": "velocity",
+      "label": "Velocity",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 5
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "tune_all",
+      "label": "Tune All",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 20
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "fx_type",
+      "label": "FX Type",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 21
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "fx_speed",
+      "label": "FX Speed",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 22
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "fx_amount",
+      "label": "FX Amount",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 23
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "reverb_type",
+      "label": "Reverb Type",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 24
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "reverb",
+      "label": "Reverb",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 25
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "pattern_level",
+      "label": "Pattern Level",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 26
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "random_sequence",
+      "label": "Random Sequence",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 27
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "structure",
+      "label": "Structure",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 28
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "wave",
+      "label": "Wave",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 29
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "harmonic",
+      "label": "Harmonic",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 30
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "balance",
+      "label": "Balance",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 31
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "pitch",
+      "label": "Pitch",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 32
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "detune",
+      "label": "Detune",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 33
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "mod_shape",
+      "label": "MOD Shape",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 34
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "mod",
+      "label": "MOD",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 35
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "depth",
+      "label": "Depth",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 36
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_type",
+      "label": "Filter Type",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 37
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_cutoff",
+      "label": "Filter Cutoff",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 38
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "filter_reso",
+      "label": "Filter Reso",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 39
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "amp_attack",
+      "label": "Amp Attack",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 40
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "amp_release",
+      "label": "Amp Release",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 41
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo1_shape",
+      "label": "LFO1 Shape",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 42
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo1_assign",
+      "label": "LFO1 Assign",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 43
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo1_trig",
+      "label": "LFO1 Trig",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 44
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo1_rate",
+      "label": "LFO1 Rate",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 45
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo1_depth",
+      "label": "LFO1 Depth",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 46
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo2_shape",
+      "label": "LFO2 Shape",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 47
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo2_assign",
+      "label": "LFO2 Assign",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 48
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo2_trig",
+      "label": "LFO2 Trig",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 49
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo2_rate",
+      "label": "LFO2 Rate",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 50
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "lfo2_depth",
+      "label": "LFO2 Depth",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 51
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "track_level",
+      "label": "Track Level",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 52
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "track_pan",
+      "label": "Track Pan",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 53
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "to_reverb_send",
+      "label": "To Reverb (send)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 54
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "to_shimmer_send",
+      "label": "To Shimmer (send)",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 55
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "dice",
+      "label": "Dice",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 56
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "octave",
+      "label": "Octave",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 57
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "voice_mode",
+      "label": "Voice Mode",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 58
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "voice_adj",
+      "label": "Voice Adj",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 59
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "transpose",
+      "label": "Transpose",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 60
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "random_step",
+      "label": "Random Step",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 61
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "prm_lock",
+      "label": "PRM Lock",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 62
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    },
+    {
+      "id": "track_mute",
+      "label": "Track Mute",
+      "tags": [],
+      "msg": {
+        "type": "cc",
+        "index": 63
+      },
+      "range": {
+        "min": 0,
+        "max": 127
+      }
+    }
+  ]
+}

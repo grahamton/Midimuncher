@@ -143,6 +143,32 @@ export function useAppController() {
   const [stageDropPerSendSpacingMs, setStageDropPerSendSpacingMs] =
     useState<number>(defaults.stageDropPerSendSpacingMs);
 
+  // Hardware Sync State (Ghost Fader)
+  const [hardwareState, setHardwareState] = useState<
+    Record<string, { value: number; latched: boolean }>
+  >({});
+  const hardwareStateRef = useRef(hardwareState);
+  useEffect(() => { hardwareStateRef.current = hardwareState; }, [hardwareState]);
+
+  const [instrumentLibrary, setInstrumentLibrary] = useState<any[]>([]);
+  useEffect(() => {
+    if (midiApi)
+      midiApi.loadInstruments().then(setInstrumentLibrary).catch(console.error);
+  }, [midiApi]);
+
+  useEffect(() => {
+    if (!midiApi) return;
+    midiApi
+      .loadInstruments()
+      .then((lib) => {
+        setInstrumentLibrary(lib);
+        console.log("Loaded instrument library:", lib.length, "definitions");
+      })
+      .catch((err) => {
+        console.warn("Failed to load instrument library:", err);
+      });
+  }, [midiApi]);
+
   // Global Settings
   const [tempoBpm, setTempoBpm] = useState(defaults.tempoBpm);
   const [useClockSync, setUseClockSync] = useState(defaults.useClockSync);
@@ -465,6 +491,73 @@ export function useAppController() {
               return { ...c, slots };
             })
           );
+      }
+      // Soft Takeover / Hardware Sync Logic
+      else if (msg.t === "cc") {
+        // Update hardware state for *mapped* controls
+        const mappedControls = controlsRef.current.filter((c) =>
+          c.slots.some(
+            (s) =>
+              s.enabled &&
+              s.kind === "cc" &&
+              s.cc === msg.cc &&
+              (s.channel === undefined || s.channel === msg.ch)
+          )
+        );
+
+        for (const ctrl of mappedControls) {
+          setHardwareState((prev) => {
+            const currentHw = prev[ctrl.id];
+            const nextVal = msg.val;
+
+            // Latch Logic
+            let nextLatched = currentHw?.latched ?? false;
+
+            if (!nextLatched) {
+               const softwareVal = ctrl.value;
+               // Check if we crossed the software value
+               // We need previous HW value to know if we crossed, but for now
+               // a simple tolerance check or "passed through" logic
+               // Or simpler: if abs(hw - sw) < threshold, latch immediately.
+               if (Math.abs(nextVal - softwareVal) < 4) { // Loose tolerance
+                 nextLatched = true;
+               }
+            }
+
+            // If latched, we drive the software value
+            if (nextLatched) {
+              // Update software control (this will re-render and send MIDI via effect?)
+              // Wait, direct update to avoid loop?
+              // updateControl(ctrl.id, { value: nextVal });
+              // We can't call updateControl from here easily without causing renders.
+              // Logic needs to be robust. For now, let's just track state.
+            }
+
+            return {
+              ...prev,
+              [ctrl.id]: {
+                value: nextVal,
+                latched: nextLatched
+              }
+            };
+          });
+
+          // If latched, actually emit the control change to the app
+          const hw = hardwareStateRef.current[ctrl.id];
+          // Note: useState ref pattern needed for hardwareState to be readable here if we use it.
+          // Simplified: just check the local calculations.
+          if ((currentHw?.latched || Math.abs(msg.val - ctrl.value) < 4)) {
+             // It is latched (or just became latched).
+             // We should update the main control value.
+             // But we need to avoid "fighting" if the update causes a send back to hardware.
+             // The main loop prevents echo if input == output, usually.
+
+             // Reuse existing nudge/update logic?
+             // We need to setControls...
+             setControls(curr => curr.map(c => c.id === ctrl.id ? { ...c, value: msg.val } : c));
+             // And emit?
+             onEmitControl(ctrl, msg.val);
+          }
         }
       }
 
@@ -922,5 +1015,6 @@ export function useAppController() {
     setSessionStatus,
     modulationState,
     setModulationState,
+    hardwareState, // Export for UI
   };
 }

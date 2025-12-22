@@ -18,6 +18,7 @@ type FaderProps = DragControlProps & {
   fill?: boolean;
   style?: CSSProperties;
   trackColor?: string;
+  ghostValue?: number;
 };
 
 type KnobProps = DragControlProps & {
@@ -25,6 +26,7 @@ type KnobProps = DragControlProps & {
   size?: "sm" | "md" | "lg";
   color?: string;
   style?: CSSProperties;
+  ghostValue?: number;
 };
 
 type CrossfaderProps = DragControlProps & {
@@ -101,6 +103,7 @@ export function Fader({
   fill = true,
   style,
   trackColor = "var(--ti-dark, #131821)",
+  ghostValue,
   ...rest
 }: FaderProps) {
   const axis = orientation === "vertical" ? "vertical" : "horizontal";
@@ -129,6 +132,14 @@ export function Fader({
   }, [orientation, size]);
 
   const handlePosition = (axis === "vertical" ? 1 - value : value) * 100;
+
+  // Ghost Logic
+  const showGhost = ghostValue !== undefined;
+  const ghostPos = showGhost
+    ? (axis === "vertical" ? 1 - ghostValue! : ghostValue!) * 100
+    : 0;
+  const needsPickup = showGhost && Math.abs(value - ghostValue!) > 0.05;
+  const pickupDir = showGhost ? (value > ghostValue! ? 1 : -1) : 0;
 
   return (
     <div
@@ -194,6 +205,29 @@ export function Fader({
             }}
           />
         ) : null}
+
+        {/* Ghost Handle */}
+        {showGhost && (
+          <div
+            style={{
+              position: "absolute",
+              left: orientation === "vertical" ? "50%" : `${ghostPos}%`,
+              bottom: orientation === "vertical" ? `${ghostPos}%` : "50%",
+              transform:
+                orientation === "vertical"
+                  ? "translate(-50%, 50%)"
+                  : "translate(-50%, 50%)",
+              width: orientation === "vertical" ? "calc(100% - 30px)" : 48,
+              height: orientation === "vertical" ? 24 : "calc(100% - 16px)",
+              borderRadius: 4,
+              border: "1px dashed rgba(255,255,255,0.4)",
+              background: "rgba(255,255,255,0.05)",
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          />
+        )}
+
         <div
           style={{
             position: "absolute",
@@ -206,14 +240,46 @@ export function Fader({
             width: orientation === "vertical" ? "calc(100% - 30px)" : 48,
             height: orientation === "vertical" ? 24 : "calc(100% - 16px)",
             borderRadius: 4,
-            background: "var(--ti-func-blue, #5a7fa1)",
+            background: needsPickup
+              ? "var(--ti-func-red, #ef4444)"
+              : "var(--ti-func-blue, #5a7fa1)",
             backgroundImage:
               "repeating-linear-gradient(180deg, transparent, transparent 4px, rgba(0,0,0,0.1) 4px, rgba(0,0,0,0.1) 5px)",
             border: "1px solid rgba(255,255,255,0.1)",
             boxShadow:
               "0 4px 8px rgba(0,0,0,0.5), inset 1px 1px 1px rgba(255,255,255,0.1)",
+            zIndex: 1,
           }}
         >
+          {/* Pickup Arrow */}
+          {needsPickup && (
+            <div
+              style={{
+                position: "absolute",
+                top:
+                  orientation === "vertical"
+                    ? pickupDir > 0
+                      ? -15
+                      : "auto"
+                    : "50%",
+                bottom:
+                  orientation === "vertical"
+                    ? pickupDir < 0
+                      ? -15
+                      : "auto"
+                    : "50%",
+                left: orientation === "vertical" ? "50%" : "auto",
+                transform: "translate(-50%, 0)",
+                color: "#ef4444",
+                fontSize: 16,
+                fontWeight: "bold",
+                textShadow: "0 0 5px rgba(0,0,0,0.8)",
+              }}
+            >
+              {orientation === "vertical" ? (pickupDir > 0 ? "▲" : "▼") : ""}
+            </div>
+          )}
+
           <div
             style={{
               position: "absolute",
@@ -261,6 +327,7 @@ export function Knob({
   size = "md",
   color = "var(--ti-amber, #fdb813)",
   style,
+  ghostValue,
   ...rest
 }: KnobProps) {
   const { startDrag, moveDrag, endDrag } = useDragValue({
@@ -285,6 +352,10 @@ export function Knob({
 
   const angle = -135 + value * 270;
 
+  const showGhost = ghostValue !== undefined;
+  const ghostAngle = showGhost ? -135 + ghostValue! * 270 : -135;
+  const needsPickup = showGhost && Math.abs(value - ghostValue!) > 0.05;
+
   return (
     <div
       style={{
@@ -306,7 +377,9 @@ export function Knob({
           height: finalDim,
           borderRadius: "50%",
           background: "radial-gradient(circle at 30% 30%, #2a3142, #131821)",
-          border: "1px solid rgba(255,255,255,0.05)",
+          border: needsPickup
+            ? "1px solid #ef4444"
+            : "1px solid rgba(255,255,255,0.05)",
           position: "relative",
           boxShadow:
             "0 4px 10px rgba(0,0,0,0.4), inset 1px 1px 1px rgba(255,255,255,0.05)",
@@ -322,6 +395,25 @@ export function Knob({
             boxShadow: "inset 1px 1px 4px rgba(0,0,0,0.5)",
           }}
         />
+
+        {/* Ghost Indicator */}
+        {showGhost && (
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: 4,
+              height: finalDim / 2.5,
+              background: "rgba(255,255,255,0.3)",
+              transform: `translate(-50%, -100%) rotate(${ghostAngle}deg)`,
+              transformOrigin: "bottom center",
+              borderRadius: 999,
+              pointerEvents: "none",
+            }}
+          />
+        )}
+
         <div
           style={{
             position: "absolute",
